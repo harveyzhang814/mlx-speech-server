@@ -172,3 +172,100 @@ def test_install_is_idempotent(fake_paths, monkeypatch):
 
     service.install()
     service.install()  # Should not raise
+
+
+def test_stop_calls_bootout(installed, monkeypatch):
+    calls = []
+    def fake_run(args, **kwargs):
+        calls.append(args)
+        return MagicMock(returncode=0)
+    monkeypatch.setattr(service.subprocess, "run", fake_run)
+
+    service.stop()
+
+    assert any("bootout" in c for c in calls)
+
+
+def test_stop_raises_when_not_installed(fake_paths):
+    with pytest.raises(RuntimeError, match="not installed"):
+        service.stop()
+
+
+def test_uninstall_removes_plist(installed, monkeypatch):
+    monkeypatch.setattr(service.subprocess, "run", lambda *a, **kw: MagicMock(returncode=0))
+    plist = installed / "LaunchAgents" / "com.local.mlx-speech-server.plist"
+    assert plist.exists()
+
+    service.uninstall()
+
+    assert not plist.exists()
+
+
+def test_uninstall_calls_bootout(installed, monkeypatch):
+    calls = []
+    def fake_run(args, **kwargs):
+        calls.append(args)
+        return MagicMock(returncode=0)
+    monkeypatch.setattr(service.subprocess, "run", fake_run)
+
+    service.uninstall()
+
+    assert any("bootout" in c for c in calls)
+
+
+def test_uninstall_raises_when_not_installed(fake_paths):
+    with pytest.raises(RuntimeError, match="not installed"):
+        service.uninstall()
+
+
+def test_start_auto_installs_when_not_installed(fake_paths, monkeypatch):
+    install_calls = []
+    monkeypatch.setattr(service, "install", lambda: install_calls.append(True))
+    monkeypatch.setattr(service.subprocess, "run", lambda *a, **kw: MagicMock(returncode=0))
+
+    service.start()
+
+    assert len(install_calls) == 1
+
+
+def test_start_skips_install_when_already_installed(installed, monkeypatch):
+    install_calls = []
+    monkeypatch.setattr(service, "install", lambda: install_calls.append(True))
+    monkeypatch.setattr(service.subprocess, "run", lambda *a, **kw: MagicMock(returncode=0))
+
+    service.start()
+
+    assert len(install_calls) == 0
+
+
+def test_start_calls_bootstrap_and_kickstart(installed, monkeypatch):
+    calls = []
+    def fake_run(args, **kwargs):
+        calls.append(args)
+        return MagicMock(returncode=0)
+    monkeypatch.setattr(service.subprocess, "run", fake_run)
+
+    service.start()
+
+    assert any("bootstrap" in c for c in calls)
+    assert any("kickstart" in c for c in calls)
+
+
+def test_restart_calls_bootout_before_bootstrap(installed, monkeypatch):
+    calls = []
+    def fake_run(args, **kwargs):
+        calls.append(args)
+        return MagicMock(returncode=0)
+    monkeypatch.setattr(service.subprocess, "run", fake_run)
+
+    service.restart()
+
+    bootout_idx = next(i for i, c in enumerate(calls) if "bootout" in c)
+    bootstrap_idx = next(i for i, c in enumerate(calls) if "bootstrap" in c)
+    assert bootout_idx < bootstrap_idx
+    assert any("kickstart" in c for c in calls)
+
+
+def test_restart_raises_when_not_installed(fake_paths):
+    with pytest.raises(RuntimeError, match="not installed"):
+        service.restart()

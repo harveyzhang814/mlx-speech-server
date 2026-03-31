@@ -1,4 +1,5 @@
 """macOS launchd service management for mlx-speech-server."""
+import os
 import subprocess
 import sys
 import xml.sax.saxutils
@@ -104,3 +105,61 @@ def install() -> None:
     env_vars = _read_env()
     PLIST_PATH.parent.mkdir(parents=True, exist_ok=True)
     PLIST_PATH.write_text(_build_plist(env_vars))
+
+
+def _launchctl_bootout() -> None:
+    uid = os.getuid()
+    subprocess.run(
+        ["launchctl", "bootout", f"gui/{uid}/{SERVICE_LABEL}"],
+        check=False,
+    )
+
+
+def _launchctl_bootstrap() -> None:
+    uid = os.getuid()
+    subprocess.run(
+        ["launchctl", "bootstrap", f"gui/{uid}", str(PLIST_PATH)],
+        check=False,
+    )
+
+
+def _launchctl_kickstart() -> None:
+    uid = os.getuid()
+    subprocess.run(
+        ["launchctl", "kickstart", "-k", f"gui/{uid}/{SERVICE_LABEL}"],
+        check=True,
+    )
+
+
+def stop() -> None:
+    """Stop the running service."""
+    _require_darwin()
+    _check_installed()
+    _launchctl_bootout()
+
+
+def uninstall() -> None:
+    """Stop service and remove plist. Venv is kept."""
+    _require_darwin()
+    _check_installed()
+    _launchctl_bootout()
+    PLIST_PATH.unlink(missing_ok=True)
+
+
+def start() -> None:
+    """Start service, auto-installing if not yet installed."""
+    _require_darwin()
+    if not is_installed():
+        install()
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    _launchctl_bootstrap()
+    _launchctl_kickstart()
+
+
+def restart() -> None:
+    """Stop then start the service."""
+    _require_darwin()
+    _check_installed()
+    _launchctl_bootout()
+    _launchctl_bootstrap()
+    _launchctl_kickstart()
