@@ -27,21 +27,37 @@ check_installed() {
     fi
 }
 
+step() {
+    echo ""
+    echo "▶ $*"
+}
+
 cmd_setup_venv() {
-    echo "🐍 Setting up virtual environment at $VENV_DIR ..."
+    step "Creating virtual environment at $VENV_DIR ..."
     python3 -m venv "$VENV_DIR"
+    echo "   ✔ venv created ($(python3 --version))"
+
+    step "Upgrading pip ..."
     "${VENV_DIR}/bin/pip" install --upgrade pip -q
-    "${VENV_DIR}/bin/pip" install -e "${PROJECT_DIR}" -q
-    echo "✅ Virtual environment ready"
+    echo "   ✔ pip upgraded"
+
+    step "Installing mlx-speech-server and dependencies ..."
+    "${VENV_DIR}/bin/pip" install -e "${PROJECT_DIR}"
+    echo "   ✔ Dependencies installed"
 }
 
 # --- commands ---
 
 cmd_install() {
+    echo "════════════════════════════════════════"
+    echo "  mlx-speech-server — Install"
+    echo "════════════════════════════════════════"
+
     # Create venv if it doesn't exist
     if [ ! -x "$PYTHON" ]; then
         cmd_setup_venv
     else
+        echo ""
         echo "ℹ️  Virtual environment already exists at $VENV_DIR"
         echo "   Run '$0 upgrade' to reinstall dependencies."
     fi
@@ -51,15 +67,20 @@ cmd_install() {
     # Build environment variables from .env file if it exists
     local env_vars=""
     if [ -f "${PROJECT_DIR}/.env" ]; then
-        echo "📄 Loading environment from .env"
+        step "Loading environment from .env ..."
         while IFS='=' read -r key value; do
             [[ "$key" =~ ^#.*$ || -z "$key" ]] && continue
             value="${value%\"}"
             value="${value#\"}"
             env_vars+="        <key>${key}</key>\n        <string>${value}</string>\n"
+            echo "   ✔ $key"
         done < "${PROJECT_DIR}/.env"
+    else
+        echo ""
+        echo "ℹ️  No .env file found — using defaults"
     fi
 
+    step "Writing launchd plist ..."
     cat > "$PLIST_PATH" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -106,97 +127,175 @@ $(printf "%b" "$env_vars")    </dict>
 </dict>
 </plist>
 PLIST
+    echo "   ✔ $PLIST_PATH"
 
-    echo "✅ Service installed: $PLIST_PATH"
-    echo "   Venv:   $VENV_DIR"
-    echo "   Logs:   $LOG_DIR/"
     echo ""
-    echo "   To start:   $0 start"
-    echo "   To configure, edit .env in project root then reinstall."
+    echo "════════════════════════════════════════"
+    echo "  ✅ Installation complete"
+    echo "════════════════════════════════════════"
+    echo "  Project:  $PROJECT_DIR"
+    echo "  Venv:     $VENV_DIR"
+    echo "  Logs:     $LOG_DIR"
+    echo "  Plist:    $PLIST_PATH"
+    echo ""
+    echo "  Next steps:"
+    echo "    $0 start    — start the service"
+    echo "    $0 status   — check health"
+    echo ""
+    echo "  After starting, API docs available at:"
+    echo "    Swagger UI → http://localhost:8000/docs"
+    echo "    ReDoc      → http://localhost:8000/redoc"
+    echo ""
+    echo "  To reconfigure: edit .env then run '$0 install' again."
+    echo "════════════════════════════════════════"
 }
 
 cmd_uninstall() {
+    echo "════════════════════════════════════════"
+    echo "  mlx-speech-server — Uninstall"
+    echo "════════════════════════════════════════"
     if [ -f "$PLIST_PATH" ]; then
-        launchctl bootout "gui/$(id -u)/${SERVICE_LABEL}" 2>/dev/null || true
+        step "Stopping service ..."
+        launchctl bootout "gui/$(id -u)/${SERVICE_LABEL}" 2>/dev/null && echo "   ✔ Stopped" || echo "   ℹ️  Was not running"
+
+        step "Removing plist ..."
         rm -f "$PLIST_PATH"
-        echo "✅ Service uninstalled"
-        echo "   Virtual environment kept at $VENV_DIR (remove manually if needed)"
+        echo "   ✔ $PLIST_PATH removed"
+
+        echo ""
+        echo "════════════════════════════════════════"
+        echo "  ✅ Service uninstalled"
+        echo "════════════════════════════════════════"
+        echo "  Virtual environment kept at:"
+        echo "    $VENV_DIR"
+        echo "  To remove it: rm -rf $VENV_DIR"
+        echo "════════════════════════════════════════"
     else
-        echo "ℹ️  Service not installed, nothing to do"
+        echo "  ℹ️  Service not installed, nothing to do"
     fi
 }
 
 cmd_upgrade() {
-    echo "⬆️  Reinstalling dependencies from $PROJECT_DIR ..."
-    "${VENV_DIR}/bin/pip" install -e "${PROJECT_DIR}" -q
-    echo "✅ Done. Restart the service to apply: $0 restart"
+    echo "════════════════════════════════════════"
+    echo "  mlx-speech-server — Upgrade"
+    echo "════════════════════════════════════════"
+    step "Reinstalling dependencies from $PROJECT_DIR ..."
+    "${VENV_DIR}/bin/pip" install -e "${PROJECT_DIR}"
+    echo ""
+    echo "  ✅ Dependencies updated."
+    echo "  Run '$0 restart' to apply changes."
 }
 
 cmd_start() {
     check_installed
     ensure_logs_dir
+    echo "▶ Starting service ..."
     launchctl bootstrap "gui/$(id -u)" "$PLIST_PATH" 2>/dev/null || true
     launchctl kickstart -k "gui/$(id -u)/${SERVICE_LABEL}" 2>/dev/null || true
     sleep 1
+    echo ""
     cmd_status
 }
 
 cmd_stop() {
     check_installed
+    echo "▶ Stopping service ..."
     launchctl bootout "gui/$(id -u)/${SERVICE_LABEL}" 2>/dev/null || true
     echo "⏹  Service stopped"
 }
 
 cmd_restart() {
-    echo "🔄 Restarting service..."
-    cmd_stop
+    check_installed
+    echo "▶ Restarting service ..."
+    launchctl bootout "gui/$(id -u)/${SERVICE_LABEL}" 2>/dev/null || true
+    echo "   ✔ Stopped"
     sleep 1
     launchctl bootstrap "gui/$(id -u)" "$PLIST_PATH" 2>/dev/null || true
+    echo "   ✔ Started"
     sleep 1
+    echo ""
     cmd_status
 }
 
 cmd_status() {
+    echo "════════════════════════════════════════"
+    echo "  mlx-speech-server — Status"
+    echo "════════════════════════════════════════"
+
     if ! [ -f "$PLIST_PATH" ]; then
-        echo "⚪ Not installed"
+        echo "  ⚪ Not installed"
+        echo "════════════════════════════════════════"
         return
     fi
+    echo "  Plist:    $PLIST_PATH"
+    echo "  Venv:     $VENV_DIR"
+    echo "  Project:  $PROJECT_DIR"
+    echo "  Logs:     $LOG_DIR"
 
     local info
     info=$(launchctl print "gui/$(id -u)/${SERVICE_LABEL}" 2>/dev/null) || {
-        echo "⚪ Installed but not loaded"
+        echo ""
+        echo "  ⚪ Installed but not loaded"
+        echo "════════════════════════════════════════"
         return
     }
 
     local pid
     pid=$(echo "$info" | grep "pid =" | awk '{print $3}')
+    echo ""
     if [ -n "$pid" ] && [ "$pid" != "0" ]; then
-        echo "🟢 Running (PID: $pid)"
+        echo "  Process:  🟢 Running (PID $pid)"
+
         local port=8000
         if [ -f "${PROJECT_DIR}/.env" ]; then
             local env_port
             env_port=$(grep '^WHISPER_PORT=' "${PROJECT_DIR}/.env" 2>/dev/null | cut -d= -f2 | tr -d '"')
             [ -n "$env_port" ] && port="$env_port"
         fi
-        if curl -s --max-time 2 "http://localhost:${port}/health" > /dev/null 2>&1; then
-            echo "   Health: OK (port $port)"
+        echo "  Port:     $port"
+
+        local health_resp
+        health_resp=$(curl -s --max-time 2 "http://localhost:${port}/health" 2>/dev/null || true)
+        if [ -n "$health_resp" ]; then
+            echo "  Health:   🟢 OK — $health_resp"
         else
-            echo "   Health: not responding yet (port $port)"
+            echo "  Health:   🟡 Not responding yet (model may still be loading)"
         fi
+
+        local queue_resp
+        queue_resp=$(curl -s --max-time 2 "http://localhost:${port}/v1/queue/stats" 2>/dev/null || true)
+        if [ -n "$queue_resp" ]; then
+            echo "  Queue:    $queue_resp"
+        fi
+        echo ""
+        echo "  API Docs:"
+        echo "    Swagger UI → http://localhost:${port}/docs"
+        echo "    ReDoc      → http://localhost:${port}/redoc"
     else
-        echo "🔴 Not running (last exit status in: launchctl print gui/$(id -u)/${SERVICE_LABEL})"
+        echo "  Process:  🔴 Not running"
+        echo "  Run 'launchctl print gui/$(id -u)/${SERVICE_LABEL}' for exit details"
     fi
+    echo "════════════════════════════════════════"
 }
 
 cmd_logs() {
     ensure_logs_dir
-    echo "=== stdout (last 30 lines) ==="
+    echo "════════════════════════════════════════"
+    echo "  mlx-speech-server — Logs"
+    echo "════════════════════════════════════════"
+    echo "  stdout: $STDOUT_LOG"
+    echo "  stderr: $STDERR_LOG"
+    echo ""
+    echo "─── stdout (last 30 lines) ─────────────"
     tail -30 "$STDOUT_LOG" 2>/dev/null || echo "(empty)"
     echo ""
-    echo "=== stderr (last 30 lines) ==="
+    echo "─── stderr (last 30 lines) ─────────────"
     tail -30 "$STDERR_LOG" 2>/dev/null || echo "(empty)"
     echo ""
-    echo "💡 Live tail: tail -f $STDOUT_LOG $STDERR_LOG"
+    echo "════════════════════════════════════════"
+    echo "  💡 Live tail:"
+    echo "     tail -f $STDOUT_LOG $STDERR_LOG"
+    echo "════════════════════════════════════════"
 }
 
 # --- main ---
@@ -211,28 +310,32 @@ case "${1:-help}" in
     status)    cmd_status ;;
     logs)      cmd_logs ;;
     *)
-        echo "mlx-speech-server service manager"
+        echo "════════════════════════════════════════"
+        echo "  mlx-speech-server service manager"
+        echo "════════════════════════════════════════"
         echo ""
         echo "Usage: $0 <command>"
         echo ""
         echo "Commands:"
-        echo "  install     Create venv, install deps, register launchd service (auto-start on login)"
-        echo "  uninstall   Remove launchd service (venv kept)"
+        echo "  install     Create venv, install deps, register launchd service"
+        echo "  uninstall   Stop and remove launchd service (venv kept)"
         echo "  upgrade     Reinstall Python dependencies from source"
         echo "  start       Start the service"
         echo "  stop        Stop the service"
         echo "  restart     Restart the service"
-        echo "  status      Show service status + health check"
-        echo "  logs        Show recent log output"
+        echo "  status      Show process status, health check, and queue stats"
+        echo "  logs        Show recent stdout/stderr log output"
         echo ""
         echo "Paths:"
-        echo "  Venv:   ${VENV_DIR}"
-        echo "  Logs:   ${LOG_DIR}"
+        echo "  Project:  $PROJECT_DIR"
+        echo "  Venv:     $VENV_DIR"
+        echo "  Logs:     $LOG_DIR"
         echo ""
         echo "Configuration:"
         echo "  Create a .env file in project root with WHISPER_* variables."
         echo "  Then run '$0 install' to apply."
         echo ""
         echo "  Override venv path:  VENV_DIR=/custom/path $0 install"
+        echo "════════════════════════════════════════"
         ;;
 esac
