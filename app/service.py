@@ -2,6 +2,8 @@
 import os
 import subprocess
 import sys
+import urllib.error
+import urllib.request
 import xml.sax.saxutils
 from pathlib import Path
 
@@ -163,6 +165,76 @@ def restart() -> None:
     _launchctl_bootout()
     _launchctl_bootstrap()
     _launchctl_kickstart()
+
+
+def get_status() -> dict:
+    """Return a dict with service status information."""
+    _require_darwin()
+    if not is_installed():
+        return {"installed": False}
+
+    uid = os.getuid()
+    result = subprocess.run(
+        ["launchctl", "print", f"gui/{uid}/{SERVICE_LABEL}"],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        return {"installed": True, "loaded": False, "running": False, "pid": None}
+
+    pid: int | None = None
+    for line in result.stdout.splitlines():
+        if "pid =" in line:
+            try:
+                pid = int(line.split("=")[1].strip())
+            except ValueError:
+                pass
+            break
+
+    env_vars = _read_env()
+    port = int(env_vars.get("WHISPER_PORT", 8000))
+
+    import json
+    health = None
+    queue = None
+    if pid:
+        for url, key in [
+            (f"http://localhost:{port}/health", "health"),
+            (f"http://localhost:{port}/v1/queue/stats", "queue"),
+        ]:
+            try:
+                with urllib.request.urlopen(url, timeout=2) as resp:
+                    value = json.loads(resp.read())
+                if key == "health":
+                    health = value
+                else:
+                    queue = value
+            except Exception:
+                pass
+
+    return {
+        "installed": True,
+        "loaded": True,
+        "running": bool(pid),
+        "pid": pid,
+        "port": port,
+        "health": health,
+        "queue": queue,
+        "plist_path": PLIST_PATH,
+        "venv_dir": VENV_DIR,
+        "log_dir": LOG_DIR,
+    }
+
+
+def get_logs() -> tuple[str, str]:
+    """Return (stdout_content, stderr_content), last 30 lines each."""
+    def tail30(path: Path) -> str:
+        if not path.exists():
+            return "(empty)"
+        lines = path.read_text().splitlines()
+        return "\n".join(lines[-30:]) if lines else "(empty)"
+
+    return tail30(STDOUT_LOG), tail30(STDERR_LOG)
 
 
 def upgrade() -> dict[str, str]:

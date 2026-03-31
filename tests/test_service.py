@@ -324,3 +324,97 @@ def test_upgrade_raises_on_git_failure(fake_paths, monkeypatch):
 
     with pytest.raises(subprocess.CalledProcessError):
         service.upgrade()
+
+
+def test_get_status_not_installed(fake_paths):
+    result = service.get_status()
+    assert result == {"installed": False}
+
+
+def test_get_status_installed_but_not_loaded(installed, monkeypatch):
+    def fake_run(args, **kwargs):
+        m = MagicMock()
+        m.returncode = 1
+        m.stdout = ""
+        return m
+    monkeypatch.setattr(service.subprocess, "run", fake_run)
+
+    result = service.get_status()
+
+    assert result["installed"] is True
+    assert result["loaded"] is False
+    assert result["running"] is False
+
+
+def test_get_status_parses_pid(installed, monkeypatch):
+    def fake_run(args, **kwargs):
+        m = MagicMock()
+        m.returncode = 0
+        m.stdout = "...\n    pid = 12345\n..."
+        return m
+    monkeypatch.setattr(service.subprocess, "run", fake_run)
+    monkeypatch.setattr(service, "_read_env", lambda: {})
+
+    with patch("urllib.request.urlopen", side_effect=OSError("no server")):
+        result = service.get_status()
+
+    assert result["running"] is True
+    assert result["pid"] == 12345
+    assert result["health"] is None
+
+
+def test_get_status_includes_health_and_queue(installed, monkeypatch):
+    import json as json_mod
+
+    def fake_run(args, **kwargs):
+        m = MagicMock()
+        m.returncode = 0
+        m.stdout = "    pid = 99\n"
+        return m
+    monkeypatch.setattr(service.subprocess, "run", fake_run)
+    monkeypatch.setattr(service, "_read_env", lambda: {})
+
+    health_cm = MagicMock()
+    health_cm.__enter__ = lambda s: s
+    health_cm.__exit__ = MagicMock(return_value=False)
+    health_cm.read.return_value = json_mod.dumps({"status": "ok"}).encode()
+
+    queue_cm = MagicMock()
+    queue_cm.__enter__ = lambda s: s
+    queue_cm.__exit__ = MagicMock(return_value=False)
+    queue_cm.read.return_value = json_mod.dumps({"queue_size": 0}).encode()
+
+    responses = iter([health_cm, queue_cm])
+    with patch("urllib.request.urlopen", side_effect=lambda *a, **kw: next(responses)):
+        result = service.get_status()
+
+    assert result["health"] == {"status": "ok"}
+    assert result["queue"] == {"queue_size": 0}
+
+
+def test_get_logs_returns_last_30_lines(fake_paths):
+    logs_dir = fake_paths / "logs"
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    stdout_log = logs_dir / "server.log"
+    stderr_log = logs_dir / "server.err"
+    stdout_log.write_text("\n".join(f"line {i}" for i in range(50)))
+    stderr_log.write_text("err1\nerr2\n")
+
+    with patch.multiple(service, STDOUT_LOG=stdout_log, STDERR_LOG=stderr_log):
+        out, err = service.get_logs()
+
+    assert len(out.splitlines()) == 30
+    assert "line 49" in out
+    assert "line 19" not in out
+    assert "err1" in err
+
+
+def test_get_logs_returns_empty_when_no_files(fake_paths):
+    stdout_log = fake_paths / "logs" / "server.log"
+    stderr_log = fake_paths / "logs" / "server.err"
+
+    with patch.multiple(service, STDOUT_LOG=stdout_log, STDERR_LOG=stderr_log):
+        out, err = service.get_logs()
+
+    assert out == "(empty)"
+    assert err == "(empty)"
