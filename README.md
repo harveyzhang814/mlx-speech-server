@@ -45,13 +45,23 @@ cd mlx-whisper-server
 
 ### Managed service (recommended)
 
-Install the CLI via [pipx](https://pipx.pypa.io), then use `mlx-speech-server` subcommands to manage the launchd service (auto-start on login, auto-restart on crash):
+Install the CLI, then use `mlx-speech-server` subcommands to manage the launchd service (auto-start on login, auto-restart on crash).
 
+**From local clone:**
 ```bash
+git clone https://github.com/your-org/mlx-whisper-server.git
+cd mlx-whisper-server
 pipx install .
 mlx-speech-server install
 mlx-speech-server start
 mlx-speech-server status
+```
+
+**From PyPI** (once published):
+```bash
+pip install mlx-speech-server
+mlx-speech-server install
+mlx-speech-server start
 ```
 
 **All service commands:**
@@ -60,7 +70,7 @@ mlx-speech-server status
 | :--- | :--- |
 | `mlx-speech-server install` | Create service venv, install deps, register launchd agent |
 | `mlx-speech-server uninstall` | Remove launchd agent (venv kept) |
-| `mlx-speech-server upgrade` | Pull latest code, reinstall if updated |
+| `mlx-speech-server upgrade` | Local clone: git pull + reinstall if updated; PyPI: pip upgrade |
 | `mlx-speech-server start` | Start service (auto-installs if needed) |
 | `mlx-speech-server stop` | Stop service |
 | `mlx-speech-server restart` | Restart service |

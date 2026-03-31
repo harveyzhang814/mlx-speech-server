@@ -45,13 +45,23 @@ cd mlx-whisper-server
 
 ### 一键部署（推荐）
 
-通过 [pipx](https://pipx.pypa.io) 安装 CLI，再使用 `mlx-speech-server` 子命令管理 launchd 服务（登录自启、崩溃自动重启）：
+安装 CLI 后，使用 `mlx-speech-server` 子命令管理 launchd 服务（登录自启、崩溃自动重启）。
 
+**本地 clone 安装：**
 ```bash
+git clone https://github.com/your-org/mlx-whisper-server.git
+cd mlx-whisper-server
 pipx install .
 mlx-speech-server install
 mlx-speech-server start
 mlx-speech-server status
+```
+
+**PyPI 安装**（发布后可用）：
+```bash
+pip install mlx-speech-server
+mlx-speech-server install
+mlx-speech-server start
 ```
 
 **完整服务管理命令：**
@@ -60,7 +70,7 @@ mlx-speech-server status
 | :--- | :--- |
 | `mlx-speech-server install` | 创建服务虚拟环境、安装依赖、注册 launchd 服务 |
 | `mlx-speech-server uninstall` | 卸载 launchd 服务（虚拟环境保留） |
-| `mlx-speech-server upgrade` | 拉取最新代码，有更新时重新安装 |
+| `mlx-speech-server upgrade` | 本地 clone：git pull + 有更新时重装；PyPI：pip upgrade |
 | `mlx-speech-server start` | 启动服务（未安装时自动安装） |
 | `mlx-speech-server stop` | 停止服务 |
 | `mlx-speech-server restart` | 重启服务 |
