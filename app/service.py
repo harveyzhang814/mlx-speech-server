@@ -1,4 +1,5 @@
 """macOS launchd service management for mlx-speech-server."""
+import subprocess
 import sys
 import xml.sax.saxutils
 from pathlib import Path
@@ -85,3 +86,21 @@ def _build_plist(env_vars: dict[str, str]) -> str:
     <string>Standard</string>
 </dict>
 </plist>"""
+
+
+def install() -> None:
+    """Create service venv, install package, register launchd plist."""
+    _require_darwin()
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+
+    if not (VENV_DIR / "bin/python").exists():
+        subprocess.run([sys.executable, "-m", "venv", str(VENV_DIR)], check=True)
+
+    subprocess.run(
+        [str(VENV_DIR / "bin/pip"), "install", "-e", str(PROJECT_ROOT)],
+        check=True,
+    )
+
+    env_vars = _read_env()
+    PLIST_PATH.parent.mkdir(parents=True, exist_ok=True)
+    PLIST_PATH.write_text(_build_plist(env_vars))

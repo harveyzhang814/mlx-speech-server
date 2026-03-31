@@ -1,5 +1,6 @@
+import subprocess
 import sys
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -106,3 +107,68 @@ def test_build_plist_escapes_xml_special_chars():
     plist = service._build_plist({"WHISPER_EXTRA": "a&b<c>d"})
     assert "<string>a&amp;b&lt;c&gt;d</string>" in plist
     assert "a&b<c>d" not in plist
+
+
+def test_install_creates_venv_when_not_exists(fake_paths, monkeypatch):
+    calls = []
+    def fake_run(args, **kwargs):
+        calls.append(args)
+        return MagicMock(returncode=0)
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    service.install()
+
+    venv_calls = [c for c in calls if "-m" in c and "venv" in c]
+    assert len(venv_calls) == 1
+
+
+def test_install_skips_venv_when_python_exists(fake_paths, monkeypatch):
+    python = fake_paths / "venv" / "bin" / "python"
+    python.parent.mkdir(parents=True)
+    python.touch()
+
+    calls = []
+    def fake_run(args, **kwargs):
+        calls.append(args)
+        return MagicMock(returncode=0)
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    service.install()
+
+    venv_calls = [c for c in calls if "-m" in c and "venv" in c]
+    assert len(venv_calls) == 0
+
+
+def test_install_runs_pip_install(fake_paths, monkeypatch):
+    calls = []
+    def fake_run(args, **kwargs):
+        calls.append(args)
+        return MagicMock(returncode=0)
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    service.install()
+
+    pip_calls = [c for c in calls if "pip" in str(c[0]) and "install" in c]
+    assert len(pip_calls) == 1
+    assert "-e" in pip_calls[0]
+
+
+def test_install_writes_plist(fake_paths, monkeypatch):
+    monkeypatch.setattr(subprocess, "run", lambda *a, **kw: MagicMock(returncode=0))
+
+    service.install()
+
+    plist = fake_paths / "LaunchAgents" / "com.local.mlx-speech-server.plist"
+    assert plist.exists()
+    assert service.SERVICE_LABEL in plist.read_text()
+
+
+def test_install_is_idempotent(fake_paths, monkeypatch):
+    """Running install twice should not raise."""
+    python = fake_paths / "venv" / "bin" / "python"
+    python.parent.mkdir(parents=True)
+    python.touch()
+    monkeypatch.setattr(subprocess, "run", lambda *a, **kw: MagicMock(returncode=0))
+
+    service.install()
+    service.install()  # Should not raise
