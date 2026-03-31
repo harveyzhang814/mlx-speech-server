@@ -18,7 +18,7 @@ def install() -> None:
     try:
         service.install()
     except Exception as e:
-        click.echo(f"Install failed: {e}", err=True)
+        click.echo(f"Install failed: {e}")
         sys.exit(1)
     click.echo("Installation complete.")
     click.echo(f"  Project:  {service.PROJECT_ROOT}")
@@ -34,8 +34,8 @@ def uninstall() -> None:
     """Stop and remove launchd agent. Venv is kept."""
     try:
         service.uninstall()
-    except RuntimeError as e:
-        click.echo(str(e), err=True)
+    except (RuntimeError, subprocess.CalledProcessError) as e:
+        click.echo(str(e))
         sys.exit(1)
     click.echo("Service uninstalled.")
     click.echo(f"  Venv kept at: {service.VENV_DIR}")
@@ -48,7 +48,7 @@ def upgrade() -> None:
     try:
         result = service.upgrade()
     except subprocess.CalledProcessError as e:
-        click.echo(f"Upgrade failed: {e}", err=True)
+        click.echo(f"Upgrade failed: {e}")
         sys.exit(1)
     if result["status"] == "up_to_date":
         click.echo("Already up to date, nothing to do.")
@@ -59,7 +59,7 @@ def upgrade() -> None:
             service.restart()
             click.echo("Service restarted.")
         except Exception as e:
-            click.echo(f"Restart failed: {e}", err=True)
+            click.echo(f"Restart failed: {e}")
             sys.exit(1)
     else:
         click.echo("Run: mlx-speech-server restart")
@@ -71,7 +71,7 @@ def start() -> None:
     try:
         service.start()
     except Exception as e:
-        click.echo(f"Start failed: {e}", err=True)
+        click.echo(f"Start failed: {e}")
         sys.exit(1)
     click.echo("Service started.")
     _print_status()
@@ -82,8 +82,8 @@ def stop() -> None:
     """Stop the running service."""
     try:
         service.stop()
-    except RuntimeError as e:
-        click.echo(str(e), err=True)
+    except (RuntimeError, subprocess.CalledProcessError) as e:
+        click.echo(str(e))
         sys.exit(1)
     click.echo("Service stopped.")
 
@@ -94,7 +94,7 @@ def restart() -> None:
     try:
         service.restart()
     except RuntimeError as e:
-        click.echo(str(e), err=True)
+        click.echo(str(e))
         sys.exit(1)
     click.echo("Service restarted.")
     _print_status()

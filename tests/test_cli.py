@@ -137,6 +137,20 @@ def test_upgrade_shows_error_on_git_failure():
     assert result.exit_code == 1
 
 
+def test_stop_launchctl_failure_shows_error():
+    runner = CliRunner()
+    with patch("cli.service.stop", side_effect=subprocess.CalledProcessError(1, "launchctl")):
+        result = runner.invoke(cli, ["stop"])
+    assert result.exit_code == 1
+
+
+def test_uninstall_launchctl_failure_shows_error():
+    runner = CliRunner()
+    with patch("cli.service.uninstall", side_effect=subprocess.CalledProcessError(1, "launchctl")):
+        result = runner.invoke(cli, ["uninstall"])
+    assert result.exit_code == 1
+
+
 def test_logs_output():
     runner = CliRunner()
     with patch("cli.service.get_logs", return_value=("stdout content", "stderr content")):
