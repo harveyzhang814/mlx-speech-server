@@ -1,38 +1,15 @@
 """macOS launchd service management for mlx-speech-server."""
-import importlib.metadata
 import json
 import os
 import subprocess
 import sys
-import urllib.parse
 import urllib.request
 import xml.sax.saxutils
 from pathlib import Path
 
 SERVICE_LABEL = "com.local.mlx-speech-server"
-
-
-def _find_project_root() -> Path:
-    """Return the project source directory.
-
-    Reads pip's direct_url.json to find where the package was installed from
-    (works for both ``pip install -e .`` and ``pipx install .``).
-    Falls back to the file-relative path when running from source.
-    """
-    try:
-        dist = importlib.metadata.distribution("mlx-speech-server")
-        raw = dist.read_text("direct_url.json")
-        if raw:
-            data = json.loads(raw)
-            url = data.get("url", "")
-            if url.startswith("file://"):
-                return Path(urllib.parse.urlparse(url).path)
-    except Exception:
-        pass
-    return Path(__file__).parent.parent
-
-
-PROJECT_ROOT = _find_project_root()
+CONFIG_DIR = Path.home() / ".config/mlx-speech-server"
+CONFIG_ENV = CONFIG_DIR / "config.env"
 VENV_DIR = Path.home() / ".local/venvs/mlx-speech-server"
 LOG_DIR = Path.home() / ".local/logs/mlx-speech-server"
 PLIST_PATH = Path.home() / "Library/LaunchAgents" / f"{SERVICE_LABEL}.plist"
@@ -55,12 +32,11 @@ def _check_installed() -> None:
 
 
 def _read_env() -> dict[str, str]:
-    """Parse .env file from project root into a dict."""
-    env_file = PROJECT_ROOT / ".env"
-    if not env_file.exists():
+    """Parse ~/.config/mlx-speech-server/config.env into a dict."""
+    if not CONFIG_ENV.exists():
         return {}
     result: dict[str, str] = {}
-    for line in env_file.read_text().splitlines():
+    for line in CONFIG_ENV.read_text().splitlines():
         line = line.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue

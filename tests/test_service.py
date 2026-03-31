@@ -18,7 +18,8 @@ def fake_paths(tmp_path):
         PLIST_PATH=plist,
         VENV_DIR=tmp_path / "venv",
         LOG_DIR=tmp_path / "logs",
-        PROJECT_ROOT=tmp_path / "project",
+        CONFIG_DIR=tmp_path / "config",
+        CONFIG_ENV=tmp_path / "config" / "config.env",
         STDOUT_LOG=tmp_path / "logs" / "server.log",
         STDERR_LOG=tmp_path / "logs" / "server.err",
     ):
@@ -51,9 +52,9 @@ def test_check_installed_passes_when_installed(installed):
 
 
 def test_read_env_parses_key_value_pairs(fake_paths):
-    env_file = fake_paths / "project" / ".env"
-    env_file.parent.mkdir(parents=True, exist_ok=True)
-    env_file.write_text("WHISPER_PORT=9000\nWHISPER_MODEL_PATH=mlx-community/whisper-large\n")
+    config_env = fake_paths / "config" / "config.env"
+    config_env.parent.mkdir(parents=True, exist_ok=True)
+    config_env.write_text("WHISPER_PORT=9000\nWHISPER_MODEL_PATH=mlx-community/whisper-large\n")
     result = service._read_env()
     assert result == {
         "WHISPER_PORT": "9000",
@@ -62,17 +63,17 @@ def test_read_env_parses_key_value_pairs(fake_paths):
 
 
 def test_read_env_skips_comments_and_blank_lines(fake_paths):
-    env_file = fake_paths / "project" / ".env"
-    env_file.parent.mkdir(parents=True, exist_ok=True)
-    env_file.write_text("# comment\n\nWHISPER_PORT=8000\n")
+    config_env = fake_paths / "config" / "config.env"
+    config_env.parent.mkdir(parents=True, exist_ok=True)
+    config_env.write_text("# comment\n\nWHISPER_PORT=8000\n")
     result = service._read_env()
     assert result == {"WHISPER_PORT": "8000"}
 
 
 def test_read_env_strips_quotes(fake_paths):
-    env_file = fake_paths / "project" / ".env"
-    env_file.parent.mkdir(parents=True, exist_ok=True)
-    env_file.write_text('WHISPER_MODEL_PATH="mlx-community/whisper-turbo"\n')
+    config_env = fake_paths / "config" / "config.env"
+    config_env.parent.mkdir(parents=True, exist_ok=True)
+    config_env.write_text('WHISPER_MODEL_PATH="mlx-community/whisper-turbo"\n')
     result = service._read_env()
     assert result == {"WHISPER_MODEL_PATH": "mlx-community/whisper-turbo"}
 
