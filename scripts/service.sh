@@ -7,9 +7,10 @@ set -euo pipefail
 SERVICE_LABEL="com.local.mlx-speech-server"
 PLIST_PATH="$HOME/Library/LaunchAgents/${SERVICE_LABEL}.plist"
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-PYTHON="${PROJECT_DIR}/venv/bin/python"
+VENV_DIR="${VENV_DIR:-$HOME/.local/venvs/mlx-speech-server}"
+PYTHON="${VENV_DIR}/bin/python"
 MAIN="${PROJECT_DIR}/main.py"
-LOG_DIR="${PROJECT_DIR}/logs"
+LOG_DIR="${HOME}/.local/logs/mlx-speech-server"
 STDOUT_LOG="${LOG_DIR}/server.log"
 STDERR_LOG="${LOG_DIR}/server.err"
 
@@ -26,13 +27,23 @@ check_installed() {
     fi
 }
 
+cmd_setup_venv() {
+    echo "🐍 Setting up virtual environment at $VENV_DIR ..."
+    python3 -m venv "$VENV_DIR"
+    "${VENV_DIR}/bin/pip" install --upgrade pip -q
+    "${VENV_DIR}/bin/pip" install -e "${PROJECT_DIR}" -q
+    echo "✅ Virtual environment ready"
+}
+
 # --- commands ---
 
 cmd_install() {
+    # Create venv if it doesn't exist
     if [ ! -x "$PYTHON" ]; then
-        echo "❌ Python not found at $PYTHON"
-        echo "   Run: python3 -m venv venv && source venv/bin/activate && pip install -e '.[dev]'"
-        exit 1
+        cmd_setup_venv
+    else
+        echo "ℹ️  Virtual environment already exists at $VENV_DIR"
+        echo "   Run '$0 upgrade' to reinstall dependencies."
     fi
 
     ensure_logs_dir
@@ -69,7 +80,7 @@ cmd_install() {
     <key>EnvironmentVariables</key>
     <dict>
         <key>PATH</key>
-        <string>${PROJECT_DIR}/venv/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+        <string>${VENV_DIR}/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
 $(printf "%b" "$env_vars")    </dict>
 
     <key>StandardOutPath</key>
@@ -97,7 +108,8 @@ $(printf "%b" "$env_vars")    </dict>
 PLIST
 
     echo "✅ Service installed: $PLIST_PATH"
-    echo "   Logs: $LOG_DIR/"
+    echo "   Venv:   $VENV_DIR"
+    echo "   Logs:   $LOG_DIR/"
     echo ""
     echo "   To start:   $0 start"
     echo "   To configure, edit .env in project root then reinstall."
@@ -105,13 +117,19 @@ PLIST
 
 cmd_uninstall() {
     if [ -f "$PLIST_PATH" ]; then
-        # Stop first if running
         launchctl bootout "gui/$(id -u)/${SERVICE_LABEL}" 2>/dev/null || true
         rm -f "$PLIST_PATH"
         echo "✅ Service uninstalled"
+        echo "   Virtual environment kept at $VENV_DIR (remove manually if needed)"
     else
         echo "ℹ️  Service not installed, nothing to do"
     fi
+}
+
+cmd_upgrade() {
+    echo "⬆️  Reinstalling dependencies from $PROJECT_DIR ..."
+    "${VENV_DIR}/bin/pip" install -e "${PROJECT_DIR}" -q
+    echo "✅ Done. Restart the service to apply: $0 restart"
 }
 
 cmd_start() {
@@ -133,7 +151,6 @@ cmd_restart() {
     echo "🔄 Restarting service..."
     cmd_stop
     sleep 1
-    # Re-bootstrap since bootout removes it
     launchctl bootstrap "gui/$(id -u)" "$PLIST_PATH" 2>/dev/null || true
     sleep 1
     cmd_status
@@ -155,7 +172,6 @@ cmd_status() {
     pid=$(echo "$info" | grep "pid =" | awk '{print $3}')
     if [ -n "$pid" ] && [ "$pid" != "0" ]; then
         echo "🟢 Running (PID: $pid)"
-        # Determine port from .env or default
         local port=8000
         if [ -f "${PROJECT_DIR}/.env" ]; then
             local env_port
@@ -188,6 +204,7 @@ cmd_logs() {
 case "${1:-help}" in
     install)   cmd_install ;;
     uninstall) cmd_uninstall ;;
+    upgrade)   cmd_upgrade ;;
     start)     cmd_start ;;
     stop)      cmd_stop ;;
     restart)   cmd_restart ;;
@@ -199,16 +216,23 @@ case "${1:-help}" in
         echo "Usage: $0 <command>"
         echo ""
         echo "Commands:"
-        echo "  install     Install launchd service (auto-start on login)"
-        echo "  uninstall   Remove launchd service"
+        echo "  install     Create venv, install deps, register launchd service (auto-start on login)"
+        echo "  uninstall   Remove launchd service (venv kept)"
+        echo "  upgrade     Reinstall Python dependencies from source"
         echo "  start       Start the service"
         echo "  stop        Stop the service"
         echo "  restart     Restart the service"
         echo "  status      Show service status + health check"
         echo "  logs        Show recent log output"
         echo ""
+        echo "Paths:"
+        echo "  Venv:   ${VENV_DIR}"
+        echo "  Logs:   ${LOG_DIR}"
+        echo ""
         echo "Configuration:"
         echo "  Create a .env file in project root with WHISPER_* variables."
         echo "  Then run '$0 install' to apply."
+        echo ""
+        echo "  Override venv path:  VENV_DIR=/custom/path $0 install"
         ;;
 esac
