@@ -45,30 +45,31 @@ cd mlx-whisper-server
 
 ### Managed service (recommended)
 
-The included service script auto-creates a virtualenv, installs dependencies, and registers a launchd service (auto-start on login, auto-restart on crash):
+Install the CLI via [pipx](https://pipx.pypa.io), then use `mlx-speech-server` subcommands to manage the launchd service (auto-start on login, auto-restart on crash):
 
 ```bash
-./scripts/service.sh install
-./scripts/service.sh start
-./scripts/service.sh status
+pipx install .
+mlx-speech-server install
+mlx-speech-server start
+mlx-speech-server status
 ```
 
 **All service commands:**
 
 | Command | Description |
 | :--- | :--- |
-| `./scripts/service.sh install` | Install and set up virtualenv |
-| `./scripts/service.sh uninstall` | Remove service |
-| `./scripts/service.sh upgrade` | Update dependencies |
-| `./scripts/service.sh start` | Start service |
-| `./scripts/service.sh stop` | Stop service |
-| `./scripts/service.sh restart` | Restart service |
-| `./scripts/service.sh status` | Show status and health check |
-| `./scripts/service.sh logs` | Tail logs |
+| `mlx-speech-server install` | Create service venv, install deps, register launchd agent |
+| `mlx-speech-server uninstall` | Remove launchd agent (venv kept) |
+| `mlx-speech-server upgrade` | Pull latest code, reinstall if updated |
+| `mlx-speech-server start` | Start service (auto-installs if needed) |
+| `mlx-speech-server stop` | Stop service |
+| `mlx-speech-server restart` | Restart service |
+| `mlx-speech-server status` | Show PID, health check, queue stats |
+| `mlx-speech-server logs` | Show recent log output |
 
 Default paths:
-- Virtualenv: `~/.local/venvs/mlx-whisper-server/`
-- Logs: `~/.local/logs/mlx-whisper-server/`
+- Service venv: `~/.local/venvs/mlx-speech-server/`
+- Logs: `~/.local/logs/mlx-speech-server/`
 
 ### Manual start
 
@@ -282,7 +283,7 @@ WHISPER_QUEUE_MAX_SIZE=10
 After editing, reinstall and restart the service:
 
 ```bash
-./scripts/service.sh install && ./scripts/service.sh restart
+mlx-speech-server install && mlx-speech-server restart
 ```
 
 ## Using with OpenAI SDK

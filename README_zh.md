@@ -45,30 +45,31 @@ cd mlx-whisper-server
 
 ### 一键部署（推荐）
 
-内置服务管理脚本会自动创建虚拟环境、安装依赖，并注册为 launchd 系统服务（登录自启、崩溃自动重启）：
+通过 [pipx](https://pipx.pypa.io) 安装 CLI，再使用 `mlx-speech-server` 子命令管理 launchd 服务（登录自启、崩溃自动重启）：
 
 ```bash
-./scripts/service.sh install
-./scripts/service.sh start
-./scripts/service.sh status
+pipx install .
+mlx-speech-server install
+mlx-speech-server start
+mlx-speech-server status
 ```
 
 **完整服务管理命令：**
 
 | 命令 | 说明 |
 | :--- | :--- |
-| `./scripts/service.sh install` | 安装（自动创建虚拟环境） |
-| `./scripts/service.sh uninstall` | 卸载服务 |
-| `./scripts/service.sh upgrade` | 更新依赖 |
-| `./scripts/service.sh start` | 启动服务 |
-| `./scripts/service.sh stop` | 停止服务 |
-| `./scripts/service.sh restart` | 重启服务 |
-| `./scripts/service.sh status` | 查看状态（含健康检查） |
-| `./scripts/service.sh logs` | 查看日志 |
+| `mlx-speech-server install` | 创建服务虚拟环境、安装依赖、注册 launchd 服务 |
+| `mlx-speech-server uninstall` | 卸载 launchd 服务（虚拟环境保留） |
+| `mlx-speech-server upgrade` | 拉取最新代码，有更新时重新安装 |
+| `mlx-speech-server start` | 启动服务（未安装时自动安装） |
+| `mlx-speech-server stop` | 停止服务 |
+| `mlx-speech-server restart` | 重启服务 |
+| `mlx-speech-server status` | 查看状态（含健康检查） |
+| `mlx-speech-server logs` | 查看日志 |
 
 默认路径：
-- 虚拟环境：`~/.local/venvs/mlx-whisper-server/`
-- 日志：`~/.local/logs/mlx-whisper-server/`
+- 服务虚拟环境：`~/.local/venvs/mlx-speech-server/`
+- 日志：`~/.local/logs/mlx-speech-server/`
 
 ### 手动启动
 
@@ -282,7 +283,7 @@ WHISPER_QUEUE_MAX_SIZE=10
 修改后重新安装服务即可生效：
 
 ```bash
-./scripts/service.sh install && ./scripts/service.sh restart
+mlx-speech-server install && mlx-speech-server restart
 ```
 
 ## 使用 OpenAI SDK 调用
