@@ -1,9 +1,5 @@
 """macOS launchd service management for mlx-speech-server."""
-import os
-import subprocess
 import sys
-import urllib.error
-import urllib.request
 from pathlib import Path
 
 SERVICE_LABEL = "com.local.mlx-speech-server"
