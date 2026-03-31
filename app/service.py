@@ -1,8 +1,8 @@
 """macOS launchd service management for mlx-speech-server."""
+import json
 import os
 import subprocess
 import sys
-import urllib.error
 import urllib.request
 import xml.sax.saxutils
 from pathlib import Path
@@ -194,7 +194,6 @@ def get_status() -> dict:
     env_vars = _read_env()
     port = int(env_vars.get("WHISPER_PORT", 8000))
 
-    import json
     health = None
     queue = None
     if pid:
