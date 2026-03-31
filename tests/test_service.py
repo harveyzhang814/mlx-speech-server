@@ -1,5 +1,6 @@
 import subprocess
 import sys
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -110,12 +111,108 @@ def test_build_plist_escapes_xml_special_chars():
     assert "a&b<c>d" not in plist
 
 
+def test_is_editable_install_true(monkeypatch):
+    import importlib.metadata as _meta
+    fake_dist = MagicMock()
+    fake_dist.read_text.return_value = '{"url": "file:///home/user/project", "dir_info": {"editable": true}}'
+    monkeypatch.setattr(_meta, "distribution", lambda _: fake_dist)
+    assert service._is_editable_install() is True
+
+
+def test_is_editable_install_false_for_pypi(monkeypatch):
+    import importlib.metadata as _meta
+    fake_dist = MagicMock()
+    fake_dist.read_text.return_value = '{"url": "https://files.pythonhosted.org/...", "dir_info": {}}'
+    monkeypatch.setattr(_meta, "distribution", lambda _: fake_dist)
+    assert service._is_editable_install() is False
+
+
+def test_is_editable_install_false_when_no_metadata(monkeypatch):
+    import importlib.metadata as _meta
+
+    def raise_not_found(_):
+        raise _meta.PackageNotFoundError()
+
+    monkeypatch.setattr(_meta, "distribution", raise_not_found)
+    assert service._is_editable_install() is False
+
+
+def test_get_project_dir_returns_path_for_editable(monkeypatch):
+    import importlib.metadata as _meta
+    fake_dist = MagicMock()
+    fake_dist.read_text.return_value = '{"url": "file:///home/user/myproject", "dir_info": {"editable": true}}'
+    monkeypatch.setattr(_meta, "distribution", lambda _: fake_dist)
+    assert service._get_project_dir() == Path("/home/user/myproject")
+
+
+def test_get_project_dir_raises_for_non_editable(monkeypatch):
+    import importlib.metadata as _meta
+    fake_dist = MagicMock()
+    fake_dist.read_text.return_value = '{"url": "https://files.pythonhosted.org/...", "dir_info": {}}'
+    monkeypatch.setattr(_meta, "distribution", lambda _: fake_dist)
+    with pytest.raises(RuntimeError, match="editable"):
+        service._get_project_dir()
+
+
+def test_get_install_args_editable(monkeypatch):
+    monkeypatch.setattr(service, "_is_editable_install", lambda: True)
+    monkeypatch.setattr(service, "_get_project_dir", lambda: Path("/home/user/project"))
+    assert service._get_install_args() == ["-e", "/home/user/project"]
+
+
+def test_get_install_args_pypi(monkeypatch):
+    monkeypatch.setattr(service, "_is_editable_install", lambda: False)
+    assert service._get_install_args() == ["mlx-speech-server"]
+
+
+def test_install_runs_pip_install_with_get_install_args(fake_paths, monkeypatch):
+    calls = []
+    def fake_run(args, **kwargs):
+        calls.append(args)
+        return MagicMock(returncode=0)
+    monkeypatch.setattr(service.subprocess, "run", fake_run)
+    monkeypatch.setattr(service, "_get_install_args", lambda: ["-e", "/home/user/project"])
+
+    service.install()
+
+    pip_calls = [c for c in calls if "pip" in str(c[0]) and "install" in c]
+    assert len(pip_calls) == 1
+    assert "-e" in pip_calls[0]
+    assert "/home/user/project" in pip_calls[0]
+
+
+def test_install_pip_uses_package_name_for_pypi(fake_paths, monkeypatch):
+    calls = []
+    def fake_run(args, **kwargs):
+        calls.append(args)
+        return MagicMock(returncode=0)
+    monkeypatch.setattr(service.subprocess, "run", fake_run)
+    monkeypatch.setattr(service, "_get_install_args", lambda: ["mlx-speech-server"])
+
+    service.install()
+
+    pip_calls = [c for c in calls if "pip" in str(c[0]) and "install" in c]
+    assert len(pip_calls) == 1
+    assert "mlx-speech-server" in pip_calls[0]
+    assert "-e" not in pip_calls[0]
+
+
+def test_install_creates_config_dir(fake_paths, monkeypatch):
+    monkeypatch.setattr(service.subprocess, "run", lambda *a, **kw: MagicMock(returncode=0))
+    monkeypatch.setattr(service, "_get_install_args", lambda: ["mlx-speech-server"])
+
+    service.install()
+
+    assert (fake_paths / "config").exists()
+
+
 def test_install_creates_venv_when_not_exists(fake_paths, monkeypatch):
     calls = []
     def fake_run(args, **kwargs):
         calls.append(args)
         return MagicMock(returncode=0)
     monkeypatch.setattr(service.subprocess, "run", fake_run)
+    monkeypatch.setattr(service, "_get_install_args", lambda: ["mlx-speech-server"])
 
     service.install()
 
@@ -133,6 +230,7 @@ def test_install_skips_venv_when_python_exists(fake_paths, monkeypatch):
         calls.append(args)
         return MagicMock(returncode=0)
     monkeypatch.setattr(service.subprocess, "run", fake_run)
+    monkeypatch.setattr(service, "_get_install_args", lambda: ["mlx-speech-server"])
 
     service.install()
 
@@ -140,22 +238,9 @@ def test_install_skips_venv_when_python_exists(fake_paths, monkeypatch):
     assert len(venv_calls) == 0
 
 
-def test_install_runs_pip_install(fake_paths, monkeypatch):
-    calls = []
-    def fake_run(args, **kwargs):
-        calls.append(args)
-        return MagicMock(returncode=0)
-    monkeypatch.setattr(service.subprocess, "run", fake_run)
-
-    service.install()
-
-    pip_calls = [c for c in calls if "pip" in str(c[0]) and "install" in c]
-    assert len(pip_calls) == 1
-    assert "-e" in pip_calls[0]
-
-
 def test_install_writes_plist(fake_paths, monkeypatch):
     monkeypatch.setattr(service.subprocess, "run", lambda *a, **kw: MagicMock(returncode=0))
+    monkeypatch.setattr(service, "_get_install_args", lambda: ["mlx-speech-server"])
 
     service.install()
 
@@ -165,14 +250,14 @@ def test_install_writes_plist(fake_paths, monkeypatch):
 
 
 def test_install_is_idempotent(fake_paths, monkeypatch):
-    """Running install twice should not raise."""
     python = fake_paths / "venv" / "bin" / "python"
     python.parent.mkdir(parents=True)
     python.touch()
     monkeypatch.setattr(service.subprocess, "run", lambda *a, **kw: MagicMock(returncode=0))
+    monkeypatch.setattr(service, "_get_install_args", lambda: ["mlx-speech-server"])
 
     service.install()
-    service.install()  # Should not raise
+    service.install()
 
 
 def test_stop_calls_bootout(installed, monkeypatch):

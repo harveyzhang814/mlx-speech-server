@@ -1,8 +1,10 @@
 """macOS launchd service management for mlx-speech-server."""
+import importlib.metadata
 import json
 import os
 import subprocess
 import sys
+import urllib.parse
 import urllib.request
 import xml.sax.saxutils
 from pathlib import Path
@@ -29,6 +31,47 @@ def is_installed() -> bool:
 def _check_installed() -> None:
     if not is_installed():
         raise RuntimeError("Service not installed. Run: mlx-speech-server install")
+
+
+def _is_editable_install() -> bool:
+    """Return True if the package was installed in editable mode (local clone)."""
+    try:
+        dist = importlib.metadata.distribution("mlx-speech-server")
+        raw = dist.read_text("direct_url.json")
+        if raw:
+            data = json.loads(raw)
+            return bool(data.get("dir_info", {}).get("editable"))
+    except Exception:
+        pass
+    return False
+
+
+def _get_project_dir() -> Path:
+    """Return the project source directory for an editable install.
+
+    Raises RuntimeError if not an editable install.
+    """
+    try:
+        dist = importlib.metadata.distribution("mlx-speech-server")
+        raw = dist.read_text("direct_url.json")
+        if raw:
+            data = json.loads(raw)
+            if data.get("dir_info", {}).get("editable"):
+                url = data.get("url", "")
+                if url.startswith("file://"):
+                    return Path(urllib.parse.urlparse(url).path)
+    except Exception:
+        pass
+    raise RuntimeError(
+        "Not an editable install. Use 'pip install -e .' for local clone upgrades."
+    )
+
+
+def _get_install_args() -> list[str]:
+    """Return pip install arguments for installing into the service venv."""
+    if _is_editable_install():
+        return ["-e", str(_get_project_dir())]
+    return ["mlx-speech-server"]
 
 
 def _read_env() -> dict[str, str]:
@@ -91,12 +134,13 @@ def install() -> None:
     """Create service venv, install package, register launchd plist."""
     _require_darwin()
     LOG_DIR.mkdir(parents=True, exist_ok=True)
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 
     if not (VENV_DIR / "bin/python").exists():
         subprocess.run([sys.executable, "-m", "venv", str(VENV_DIR)], check=True)
 
     subprocess.run(
-        [str(VENV_DIR / "bin/pip"), "install", "-e", str(PROJECT_ROOT)],
+        [str(VENV_DIR / "bin/pip"), "install"] + _get_install_args(),
         check=True,
     )
 
