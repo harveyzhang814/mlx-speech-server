@@ -1,10 +1,25 @@
+# macOS
 .DS_Store
+
+# Python
 __pycache__/
 *.pyc
 *.pyo
-.pytest_cache/
 *.egg-info/
 dist/
+build/
+
+# Virtual environments
 venv/
 .venv/
-*.egg-info/
+
+# Testing
+.pytest_cache/
+test_audio/
+
+# IDE
+.vscode/
+.idea/
+
+# Claude Code
+.claude/
