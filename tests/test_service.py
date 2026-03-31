@@ -357,7 +357,10 @@ def test_restart_raises_when_not_installed(fake_paths):
         service.restart()
 
 
-def test_upgrade_returns_up_to_date(fake_paths, monkeypatch):
+def test_upgrade_editable_returns_up_to_date(fake_paths, monkeypatch):
+    monkeypatch.setattr(service, "_is_editable_install", lambda: True)
+    monkeypatch.setattr(service, "_get_project_dir", lambda: Path("/home/user/project"))
+
     def fake_run(args, **kwargs):
         m = MagicMock()
         m.returncode = 0
@@ -366,11 +369,13 @@ def test_upgrade_returns_up_to_date(fake_paths, monkeypatch):
     monkeypatch.setattr(service.subprocess, "run", fake_run)
 
     result = service.upgrade()
-
     assert result == {"status": "up_to_date"}
 
 
-def test_upgrade_installs_when_new_commits(fake_paths, monkeypatch):
+def test_upgrade_editable_installs_when_new_commits(fake_paths, monkeypatch):
+    monkeypatch.setattr(service, "_is_editable_install", lambda: True)
+    monkeypatch.setattr(service, "_get_project_dir", lambda: Path("/home/user/project"))
+
     calls = []
     def fake_run(args, **kwargs):
         calls.append(args)
@@ -387,7 +392,10 @@ def test_upgrade_installs_when_new_commits(fake_paths, monkeypatch):
     assert len(pip_calls) == 1
 
 
-def test_upgrade_skips_pip_when_up_to_date(fake_paths, monkeypatch):
+def test_upgrade_editable_skips_pip_when_up_to_date(fake_paths, monkeypatch):
+    monkeypatch.setattr(service, "_is_editable_install", lambda: True)
+    monkeypatch.setattr(service, "_get_project_dir", lambda: Path("/home/user/project"))
+
     calls = []
     def fake_run(args, **kwargs):
         calls.append(args)
@@ -403,13 +411,48 @@ def test_upgrade_skips_pip_when_up_to_date(fake_paths, monkeypatch):
     assert len(pip_calls) == 0
 
 
-def test_upgrade_raises_on_git_failure(fake_paths, monkeypatch):
+def test_upgrade_editable_raises_on_git_failure(fake_paths, monkeypatch):
+    monkeypatch.setattr(service, "_is_editable_install", lambda: True)
+    monkeypatch.setattr(service, "_get_project_dir", lambda: Path("/home/user/project"))
+
     def raise_error(args, **kwargs):
         raise subprocess.CalledProcessError(1, "git", stderr="network error")
     monkeypatch.setattr(service.subprocess, "run", raise_error)
 
     with pytest.raises(subprocess.CalledProcessError):
         service.upgrade()
+
+
+def test_upgrade_pypi_runs_pip_upgrade(fake_paths, monkeypatch):
+    monkeypatch.setattr(service, "_is_editable_install", lambda: False)
+
+    calls = []
+    def fake_run(args, **kwargs):
+        calls.append(args)
+        m = MagicMock()
+        m.returncode = 0
+        m.stdout = "Successfully installed mlx-speech-server-1.1.0\n"
+        return m
+    monkeypatch.setattr(service.subprocess, "run", fake_run)
+
+    result = service.upgrade()
+
+    assert result == {"status": "upgraded"}
+    assert any("--upgrade" in c and "mlx-speech-server" in c for c in calls)
+
+
+def test_upgrade_pypi_returns_up_to_date_when_already_satisfied(fake_paths, monkeypatch):
+    monkeypatch.setattr(service, "_is_editable_install", lambda: False)
+
+    def fake_run(args, **kwargs):
+        m = MagicMock()
+        m.returncode = 0
+        m.stdout = "Requirement already satisfied: mlx-speech-server\n"
+        return m
+    monkeypatch.setattr(service.subprocess, "run", fake_run)
+
+    result = service.upgrade()
+    assert result == {"status": "up_to_date"}
 
 
 def test_get_status_not_installed(fake_paths):

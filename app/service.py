@@ -278,23 +278,38 @@ def get_logs() -> tuple[str, str]:
 
 def upgrade() -> dict[str, str]:
     """
-    Pull latest code and reinstall if there are new commits.
+    Update the service to the latest version.
+
+    Editable install (local clone): git pull origin main, then pip install -e . if new commits.
+    PyPI install: pip install --upgrade mlx-speech-server.
 
     Returns {"status": "up_to_date"} or {"status": "upgraded"}.
-    Raises subprocess.CalledProcessError on git failure.
+    Raises subprocess.CalledProcessError on failure.
     """
     _require_darwin()
+
+    if _is_editable_install():
+        project_dir = _get_project_dir()
+        result = subprocess.run(
+            ["git", "-C", str(project_dir), "pull", "origin", "main"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        if "Already up to date." in result.stdout:
+            return {"status": "up_to_date"}
+        subprocess.run(
+            [str(VENV_DIR / "bin/pip"), "install", "-e", str(project_dir)],
+            check=True,
+        )
+        return {"status": "upgraded"}
+
     result = subprocess.run(
-        ["git", "-C", str(PROJECT_ROOT), "pull", "origin", "main"],
+        [str(VENV_DIR / "bin/pip"), "install", "--upgrade", "mlx-speech-server"],
         check=True,
         capture_output=True,
         text=True,
     )
-    if "Already up to date." in result.stdout:
+    if "Requirement already satisfied" in result.stdout:
         return {"status": "up_to_date"}
-
-    subprocess.run(
-        [str(VENV_DIR / "bin/pip"), "install", "-e", str(PROJECT_ROOT)],
-        check=True,
-    )
     return {"status": "upgraded"}
