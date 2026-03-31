@@ -21,11 +21,12 @@ def install() -> None:
         click.echo(f"Install failed: {e}")
         sys.exit(1)
     click.echo("Installation complete.")
-    click.echo(f"  Project:  {service.PROJECT_ROOT}")
     click.echo(f"  Venv:     {service.VENV_DIR}")
+    click.echo(f"  Config:   {service.CONFIG_ENV}")
     click.echo(f"  Logs:     {service.LOG_DIR}")
     click.echo(f"  Plist:    {service.PLIST_PATH}")
     click.echo("")
+    click.echo(f"Edit {service.CONFIG_ENV} to set WHISPER_* variables.")
     click.echo("Run: mlx-speech-server start")
 
 

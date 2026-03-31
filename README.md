@@ -272,7 +272,7 @@ Configure via CLI flags or environment variables. CLI flags take priority.
 | `--memory-cleanup-interval` | `WHISPER_MEMORY_CLEANUP_INTERVAL` | `20` | Clear Metal cache every N requests |
 | `--log-level` | `WHISPER_LOG_LEVEL` | `info` | Log level (`debug`/`info`/`warning`/`error`) |
 
-You can also use a `.env` file in the project root:
+Create `~/.config/mlx-speech-server/config.env` (auto-created by `mlx-speech-server install`):
 
 ```bash
 WHISPER_PORT=8000
@@ -280,10 +280,10 @@ WHISPER_MODEL_PATH=mlx-community/whisper-large-v3-turbo
 WHISPER_QUEUE_MAX_SIZE=10
 ```
 
-After editing, reinstall and restart the service:
+After editing, restart the service:
 
 ```bash
-mlx-speech-server install && mlx-speech-server restart
+mlx-speech-server restart
 ```
 
 ## Using with OpenAI SDK

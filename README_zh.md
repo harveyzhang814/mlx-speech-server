@@ -272,7 +272,7 @@ data: [DONE]
 | `--memory-cleanup-interval` | `WHISPER_MEMORY_CLEANUP_INTERVAL` | `20` | 每 N 次请求清理一次 Metal 缓存 |
 | `--log-level` | `WHISPER_LOG_LEVEL` | `info` | 日志级别（`debug`/`info`/`warning`/`error`） |
 
-也可在项目根目录创建 `.env` 文件：
+创建 `~/.config/mlx-speech-server/config.env`（`mlx-speech-server install` 时自动创建）：
 
 ```bash
 WHISPER_PORT=8000
@@ -280,10 +280,10 @@ WHISPER_MODEL_PATH=mlx-community/whisper-large-v3-turbo
 WHISPER_QUEUE_MAX_SIZE=10
 ```
 
-修改后重新安装服务即可生效：
+修改后重启服务即可生效：
 
 ```bash
-mlx-speech-server install && mlx-speech-server restart
+mlx-speech-server restart
 ```
 
 ## 使用 OpenAI SDK 调用
