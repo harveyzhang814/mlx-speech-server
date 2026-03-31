@@ -21,5 +21,11 @@ test_audio/
 .vscode/
 .idea/
 
+# Logs
+logs/
+
+# Environment
+.env
+
 # Claude Code
 .claude/

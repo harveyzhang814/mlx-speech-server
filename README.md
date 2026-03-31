@@ -6,7 +6,7 @@ OpenAI-compatible Whisper transcription API server, running natively on Apple Si
 
 - **OpenAI API compatible** — drop-in replacement for `POST /v1/audio/transcriptions`
 - **All response formats** — `json`, `text`, `verbose_json`, `srt`, `vtt`
-- **Streaming** — segment-level SSE via `stream=true`
+- **Streaming** — segment-level SSE via `stream=true` (note: `mlx_whisper` does not support token-level streaming; full inference runs first, then segments are yielded sequentially)
 - **Apple Silicon optimized** — Metal GPU acceleration, periodic `mx.clear_cache()` to manage unified memory
 - **Request queue** — configurable max size and timeout, with `GET /v1/queue/stats` monitoring
 - **Extensible** — handler abstraction supports future model types (LLM, embeddings, etc.)
@@ -42,6 +42,11 @@ python main.py --model-path mlx-community/whisper-large-v3-turbo-q4
 The model downloads automatically from HuggingFace on first request.
 
 ## API Reference
+
+Server started, interactive API docs are available at:
+
+- **Swagger UI**: `http://localhost:8000/docs`
+- **ReDoc**: `http://localhost:8000/redoc`
 
 ### Health Check
 
