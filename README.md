@@ -1,5 +1,7 @@
 # mlx-speech-server
 
+[中文文档](README_zh.md)
+
 OpenAI-compatible Whisper transcription API server, running natively on Apple Silicon via [MLX](https://github.com/ml-explore/mlx).
 
 ## Features
