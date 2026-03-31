@@ -1,4 +1,4 @@
-import subprocess
+import subprocess  # noqa: F401  # Used in later tasks (CalledProcessError)
 import sys
 from unittest.mock import MagicMock, patch
 
@@ -114,7 +114,7 @@ def test_install_creates_venv_when_not_exists(fake_paths, monkeypatch):
     def fake_run(args, **kwargs):
         calls.append(args)
         return MagicMock(returncode=0)
-    monkeypatch.setattr(subprocess, "run", fake_run)
+    monkeypatch.setattr(service.subprocess, "run", fake_run)
 
     service.install()
 
@@ -131,7 +131,7 @@ def test_install_skips_venv_when_python_exists(fake_paths, monkeypatch):
     def fake_run(args, **kwargs):
         calls.append(args)
         return MagicMock(returncode=0)
-    monkeypatch.setattr(subprocess, "run", fake_run)
+    monkeypatch.setattr(service.subprocess, "run", fake_run)
 
     service.install()
 
@@ -144,7 +144,7 @@ def test_install_runs_pip_install(fake_paths, monkeypatch):
     def fake_run(args, **kwargs):
         calls.append(args)
         return MagicMock(returncode=0)
-    monkeypatch.setattr(subprocess, "run", fake_run)
+    monkeypatch.setattr(service.subprocess, "run", fake_run)
 
     service.install()
 
@@ -154,7 +154,7 @@ def test_install_runs_pip_install(fake_paths, monkeypatch):
 
 
 def test_install_writes_plist(fake_paths, monkeypatch):
-    monkeypatch.setattr(subprocess, "run", lambda *a, **kw: MagicMock(returncode=0))
+    monkeypatch.setattr(service.subprocess, "run", lambda *a, **kw: MagicMock(returncode=0))
 
     service.install()
 
@@ -168,7 +168,7 @@ def test_install_is_idempotent(fake_paths, monkeypatch):
     python = fake_paths / "venv" / "bin" / "python"
     python.parent.mkdir(parents=True)
     python.touch()
-    monkeypatch.setattr(subprocess, "run", lambda *a, **kw: MagicMock(returncode=0))
+    monkeypatch.setattr(service.subprocess, "run", lambda *a, **kw: MagicMock(returncode=0))
 
     service.install()
     service.install()  # Should not raise
