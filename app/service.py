@@ -163,3 +163,27 @@ def restart() -> None:
     _launchctl_bootout()
     _launchctl_bootstrap()
     _launchctl_kickstart()
+
+
+def upgrade() -> dict[str, str]:
+    """
+    Pull latest code and reinstall if there are new commits.
+
+    Returns {"status": "up_to_date"} or {"status": "upgraded"}.
+    Raises subprocess.CalledProcessError on git failure.
+    """
+    _require_darwin()
+    result = subprocess.run(
+        ["git", "-C", str(PROJECT_ROOT), "pull", "origin", "main"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    if "Already up to date." in result.stdout:
+        return {"status": "up_to_date"}
+
+    subprocess.run(
+        [str(VENV_DIR / "bin/pip"), "install", "-e", str(PROJECT_ROOT)],
+        check=True,
+    )
+    return {"status": "upgraded"}

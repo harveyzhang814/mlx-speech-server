@@ -1,4 +1,4 @@
-import subprocess  # noqa: F401  # Used in later tasks (CalledProcessError)
+import subprocess
 import sys
 from unittest.mock import MagicMock, patch
 
@@ -269,3 +269,58 @@ def test_restart_calls_bootout_before_bootstrap(installed, monkeypatch):
 def test_restart_raises_when_not_installed(fake_paths):
     with pytest.raises(RuntimeError, match="not installed"):
         service.restart()
+
+
+def test_upgrade_returns_up_to_date(fake_paths, monkeypatch):
+    def fake_run(args, **kwargs):
+        m = MagicMock()
+        m.returncode = 0
+        m.stdout = "Already up to date.\n"
+        return m
+    monkeypatch.setattr(service.subprocess, "run", fake_run)
+
+    result = service.upgrade()
+
+    assert result == {"status": "up_to_date"}
+
+
+def test_upgrade_installs_when_new_commits(fake_paths, monkeypatch):
+    calls = []
+    def fake_run(args, **kwargs):
+        calls.append(args)
+        m = MagicMock()
+        m.returncode = 0
+        m.stdout = "Fast-forward\n 1 file changed\n"
+        return m
+    monkeypatch.setattr(service.subprocess, "run", fake_run)
+
+    result = service.upgrade()
+
+    assert result == {"status": "upgraded"}
+    pip_calls = [c for c in calls if "pip" in str(c[0]) and "install" in c]
+    assert len(pip_calls) == 1
+
+
+def test_upgrade_skips_pip_when_up_to_date(fake_paths, monkeypatch):
+    calls = []
+    def fake_run(args, **kwargs):
+        calls.append(args)
+        m = MagicMock()
+        m.returncode = 0
+        m.stdout = "Already up to date.\n"
+        return m
+    monkeypatch.setattr(service.subprocess, "run", fake_run)
+
+    service.upgrade()
+
+    pip_calls = [c for c in calls if "pip" in str(c[0]) and "install" in c]
+    assert len(pip_calls) == 0
+
+
+def test_upgrade_raises_on_git_failure(fake_paths, monkeypatch):
+    def raise_error(args, **kwargs):
+        raise subprocess.CalledProcessError(1, "git", stderr="network error")
+    monkeypatch.setattr(service.subprocess, "run", raise_error)
+
+    with pytest.raises(subprocess.CalledProcessError):
+        service.upgrade()
