@@ -1,5 +1,6 @@
 """macOS launchd service management for mlx-speech-server."""
 import sys
+import xml.sax.saxutils
 from pathlib import Path
 
 SERVICE_LABEL = "com.local.mlx-speech-server"
@@ -43,7 +44,7 @@ def _read_env() -> dict[str, str]:
 def _build_plist(env_vars: dict[str, str]) -> str:
     """Generate launchd plist XML content."""
     env_entries = "".join(
-        f"        <key>{k}</key>\n        <string>{v}</string>\n"
+        f"        <key>{xml.sax.saxutils.escape(k)}</key>\n        <string>{xml.sax.saxutils.escape(v)}</string>\n"
         for k, v in env_vars.items()
     )
     python = VENV_DIR / "bin/python"

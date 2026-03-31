@@ -100,3 +100,9 @@ def test_build_plist_injects_env_vars():
 def test_build_plist_excludes_missing_env_vars():
     plist = service._build_plist({})
     assert "WHISPER_PORT" not in plist
+
+
+def test_build_plist_escapes_xml_special_chars():
+    plist = service._build_plist({"WHISPER_EXTRA": "a&b<c>d"})
+    assert "<string>a&amp;b&lt;c&gt;d</string>" in plist
+    assert "a&b<c>d" not in plist
