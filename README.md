@@ -41,6 +41,25 @@ python main.py --model-path mlx-community/whisper-large-v3-turbo-q4
 
 The model downloads automatically from HuggingFace on first request.
 
+## Supported Models
+
+All [mlx-community](https://huggingface.co/mlx-community) Whisper models are supported out of the box — just change `--model-path`:
+
+| Model | Size | Min RAM | Recommended Chip | Use Case |
+|---|---|---|---|---|
+| `mlx-community/whisper-large-v3-turbo` | ~1.6GB | 8GB | M1 Pro+ | **Default.** Best speed/quality balance |
+| `mlx-community/whisper-large-v3-mlx` | ~3GB | 16GB | M1 Pro+ | Highest quality, slower |
+| `mlx-community/whisper-large-v3-mlx-4bit` | ~0.9GB | 8GB | M1+ | Low memory, slightly lower quality |
+| `mlx-community/whisper-large-v3-turbo-8bit` | ~0.8GB | 8GB | M1+ | Turbo quantized, lower memory |
+| `mlx-community/distil-whisper-large-v3` | ~1.5GB | 8GB | M1 Pro+ | Distilled, faster inference |
+| `mlx-community/whisper-medium-mlx` | ~1.5GB | 8GB | M1+ | Mid-size, multilingual |
+| `mlx-community/whisper-small-mlx` | ~0.5GB | 8GB | M1+ | Lightweight, good for real-time |
+| `mlx-community/whisper-tiny-mlx` | ~0.15GB | 8GB | M1+ | Smallest and fastest, limited quality |
+
+> **Note:** RAM requirements include model weights + inference overhead (~2-3x model size). On 8GB devices, prefer quantized or small models to leave headroom for the OS and other apps. Unified memory is shared between CPU and GPU on Apple Silicon — the model and inference buffers compete with system memory.
+
+Additional variants available: English-only (`.en`), quantized (2/4/8-bit), FP32, language-specific fine-tunes (German, etc.). See the full list at [mlx-community on HuggingFace](https://huggingface.co/collections/mlx-community/whisper).
+
 ## API Reference
 
 Server started, interactive API docs are available at:
