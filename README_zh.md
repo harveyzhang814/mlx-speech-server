@@ -1,6 +1,19 @@
-# mlx-speech-server
+# mlx-whisper-server
 
-[English](README.md)
+<p align="center">
+  <a href="README.md">English</a> ·
+  <a href="#安装">安装</a> ·
+  <a href="#快速开始">快速开始</a> ·
+  <a href="#api-文档">API</a> ·
+  <a href="#配置">配置</a>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/platform-Apple%20Silicon-black?logo=apple" alt="Apple Silicon">
+  <img src="https://img.shields.io/badge/python-3.11%2B-blue?logo=python&logoColor=white" alt="Python 3.11+">
+  <img src="https://img.shields.io/badge/API-OpenAI%20Compatible-412991?logo=openai&logoColor=white" alt="OpenAI Compatible">
+  <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT License">
+</p>
 
 基于 [MLX](https://github.com/ml-explore/mlx) 在 Apple Silicon 上原生运行的 OpenAI 兼容 Whisper 语音转录 API 服务。
 
@@ -8,10 +21,13 @@
 
 - **OpenAI API 兼容** — 可直接替换 `POST /v1/audio/transcriptions`
 - **全格式输出** — 支持 `json`、`text`、`verbose_json`、`srt`、`vtt`
-- **流式输出** — 通过 `stream=true` 启用 SSE 推送（注意：`mlx_whisper` 不支持 token 级流式，实际行为是完整推理完成后按段落依次推送）
+- **流式输出** — 通过 `stream=true` 启用 SSE 推送
 - **Apple Silicon 优化** — Metal GPU 加速，定期调用 `mx.clear_cache()` 管理统一内存
 - **请求队列** — 可配置队列大小和超时，提供 `GET /v1/queue/stats` 监控接口
 - **可扩展架构** — Handler 抽象层支持未来接入其他模型类型（LLM、Embeddings 等）
+
+> [!NOTE]
+> `mlx_whisper` 不支持 token 级流式输出。实际行为是完整推理完成后，按段落依次通过 SSE 推送。
 
 ## 系统要求
 
@@ -21,15 +37,15 @@
 ## 安装
 
 ```bash
-git clone https://github.com/harveyzhang814/mlx-speech-server.git
-cd mlx-speech-server
+git clone https://github.com/harveyzhang814/mlx-whisper-server.git
+cd mlx-whisper-server
 ```
 
 ## 快速开始
 
 ### 一键部署（推荐）
 
-使用内置服务管理脚本，自动创建虚拟环境、安装依赖、注册为系统服务（登录自启、崩溃自动重启）：
+内置服务管理脚本会自动创建虚拟环境、安装依赖，并注册为 launchd 系统服务（登录自启、崩溃自动重启）：
 
 ```bash
 ./scripts/service.sh install
@@ -37,27 +53,28 @@ cd mlx-speech-server
 ./scripts/service.sh status
 ```
 
-服务管理命令：
+**完整服务管理命令：**
 
-```bash
-./scripts/service.sh install    # 安装（自动创建虚拟环境）
-./scripts/service.sh uninstall  # 卸载
-./scripts/service.sh upgrade    # 更新依赖
-./scripts/service.sh start      # 启动
-./scripts/service.sh stop       # 停止
-./scripts/service.sh restart    # 重启
-./scripts/service.sh status     # 查看状态（含健康检查）
-./scripts/service.sh logs       # 查看日志
-```
+| 命令 | 说明 |
+| :--- | :--- |
+| `./scripts/service.sh install` | 安装（自动创建虚拟环境） |
+| `./scripts/service.sh uninstall` | 卸载服务 |
+| `./scripts/service.sh upgrade` | 更新依赖 |
+| `./scripts/service.sh start` | 启动服务 |
+| `./scripts/service.sh stop` | 停止服务 |
+| `./scripts/service.sh restart` | 重启服务 |
+| `./scripts/service.sh status` | 查看状态（含健康检查） |
+| `./scripts/service.sh logs` | 查看日志 |
 
-虚拟环境默认路径：`~/.local/venvs/mlx-speech-server/`
-日志默认路径：`~/.local/logs/mlx-speech-server/`
+默认路径：
+- 虚拟环境：`~/.local/venvs/mlx-whisper-server/`
+- 日志：`~/.local/logs/mlx-whisper-server/`
 
 ### 手动启动
 
 ```bash
-python3 -m venv ~/.local/venvs/mlx-speech-server
-source ~/.local/venvs/mlx-speech-server/bin/activate
+python3 -m venv ~/.local/venvs/mlx-whisper-server
+source ~/.local/venvs/mlx-whisper-server/bin/activate
 pip install -e "."
 
 # 默认启动（whisper-large-v3-turbo，端口 8000）
@@ -77,24 +94,24 @@ python main.py --model-path mlx-community/whisper-large-v3-turbo-q4
 所有 [mlx-community](https://huggingface.co/mlx-community) 下的 Whisper 模型均可直接使用，只需修改 `--model-path`：
 
 | 模型 | 大小 | 最低内存 | 推荐芯片 | 适用场景 |
-|---|---|---|---|---|
-| `mlx-community/whisper-large-v3-turbo` | ~1.6GB | 8GB | M1 Pro+ | **默认**，速度与质量最佳平衡 |
-| `mlx-community/whisper-large-v3-mlx` | ~3GB | 16GB | M1 Pro+ | 最高质量，速度较慢 |
-| `mlx-community/whisper-large-v3-mlx-4bit` | ~0.9GB | 8GB | M1+ | 低内存，质量略降 |
-| `mlx-community/whisper-large-v3-turbo-8bit` | ~0.8GB | 8GB | M1+ | turbo 量化版，更省内存 |
-| `mlx-community/distil-whisper-large-v3` | ~1.5GB | 8GB | M1 Pro+ | 蒸馏版，速度更快 |
-| `mlx-community/whisper-medium-mlx` | ~1.5GB | 8GB | M1+ | 中等大小，多语言 |
-| `mlx-community/whisper-small-mlx` | ~0.5GB | 8GB | M1+ | 轻量，适合实时场景 |
-| `mlx-community/whisper-tiny-mlx` | ~0.15GB | 8GB | M1+ | 最小最快，质量有限 |
+| :--- | :--- | :--- | :--- | :--- |
+| `mlx-community/whisper-large-v3-turbo` | ~1.6 GB | 8 GB | M1 Pro+ | **默认**，速度与质量最佳平衡 |
+| `mlx-community/whisper-large-v3-mlx` | ~3 GB | 16 GB | M1 Pro+ | 最高质量，速度较慢 |
+| `mlx-community/whisper-large-v3-mlx-4bit` | ~0.9 GB | 8 GB | M1+ | 低内存，质量略降 |
+| `mlx-community/whisper-large-v3-turbo-8bit` | ~0.8 GB | 8 GB | M1+ | turbo 量化版，更省内存 |
+| `mlx-community/distil-whisper-large-v3` | ~1.5 GB | 8 GB | M1 Pro+ | 蒸馏版，速度更快 |
+| `mlx-community/whisper-medium-mlx` | ~1.5 GB | 8 GB | M1+ | 中等大小，多语言 |
+| `mlx-community/whisper-small-mlx` | ~0.5 GB | 8 GB | M1+ | 轻量，适合实时场景 |
+| `mlx-community/whisper-tiny-mlx` | ~0.15 GB | 8 GB | M1+ | 最小最快，质量有限 |
 
-> **注意：** 内存需求包含模型权重 + 推理开销（约为模型大小的 2-3 倍）。8GB 设备建议使用量化或小型模型，为系统和其他应用留出余量。Apple Silicon 的统一内存由 CPU 和 GPU 共享，模型和推理缓冲区与系统内存竞争。
+> [!TIP]
+> 内存需求包含模型权重 + 推理开销（约为模型大小的 2–3 倍）。8 GB 设备建议使用量化或小型模型，为系统和其他应用留出余量。Apple Silicon 的统一内存由 CPU 和 GPU 共享，模型权重、推理缓冲区与系统内存共同竞争同一内存池。
 
 其他变体：纯英语版（`.en`）、量化版（2/4/8-bit）、FP32、语言专项微调（德语等）。完整列表见 [mlx-community on HuggingFace](https://huggingface.co/collections/mlx-community/whisper)。
 
 ## API 文档
 
 服务启动后，可通过浏览器访问交互式 API 文档：
-
 - **Swagger UI**：`http://localhost:8000/docs`
 - **ReDoc**：`http://localhost:8000/redoc`
 
@@ -143,14 +160,14 @@ Content-Type: multipart/form-data
 **请求参数：**
 
 | 字段 | 类型 | 必填 | 说明 |
-|---|---|---|---|
-| `file` | file | 是 | 音频文件（mp3、wav、m4a、ogg、flac、aac、webm） |
-| `model` | string | 是 | 模型 ID，如 `whisper-large-v3-turbo` |
-| `language` | string | 否 | ISO 639-1 语言代码，留空自动检测 |
-| `prompt` | string | 否 | 转录上下文提示 |
-| `response_format` | string | 否 | `json`（默认）、`text`、`verbose_json`、`srt`、`vtt` |
-| `temperature` | float | 否 | 0.0-1.0，默认 0.0 |
-| `stream` | bool | 否 | 启用 SSE 流式输出，默认 false |
+| :--- | :--- | :---: | :--- |
+| `file` | file | ✓ | 音频文件（mp3、wav、m4a、ogg、flac、aac、webm） |
+| `model` | string | ✓ | 模型 ID，如 `whisper-large-v3-turbo` |
+| `language` | string | — | ISO 639-1 语言代码，留空自动检测 |
+| `prompt` | string | — | 转录上下文提示 |
+| `response_format` | string | — | `json`（默认）、`text`、`verbose_json`、`srt`、`vtt` |
+| `temperature` | float | — | 0.0–1.0，默认 `0.0` |
+| `stream` | bool | — | 启用 SSE 流式输出，默认 `false` |
 
 **请求示例：**
 
@@ -179,7 +196,8 @@ curl http://localhost:8000/v1/audio/transcriptions \
   -F language=zh
 ```
 
-**响应格式示例：**
+<details>
+<summary><strong>响应格式示例</strong></summary>
 
 `json`：
 ```json
@@ -214,17 +232,19 @@ WEBVTT
 你好世界
 ```
 
-**流式 SSE：**
+流式 SSE：
 ```
 data: {"text": "你好世界"}
 
 data: [DONE]
 ```
 
+</details>
+
 **错误码：**
 
 | 状态码 | Code | 原因 |
-|---|---|---|
+| :---: | :--- | :--- |
 | 400 | `model_not_found` | 未知模型 ID |
 | 400 | `invalid_response_format` | 不支持的响应格式 |
 | 415 | `unsupported_audio_format` | 不支持的音频格式 |
@@ -241,17 +261,17 @@ data: [DONE]
 通过 CLI 参数或环境变量配置，CLI 参数优先级更高：
 
 | CLI 参数 | 环境变量 | 默认值 | 说明 |
-|---|---|---|---|
+| :--- | :--- | :--- | :--- |
 | `--host` | `WHISPER_HOST` | `0.0.0.0` | 监听地址 |
 | `--port` | `WHISPER_PORT` | `8000` | 监听端口 |
 | `--model-path` | `WHISPER_MODEL_PATH` | `mlx-community/whisper-large-v3-turbo` | HuggingFace 仓库或本地路径 |
-| `--quantize` | `WHISPER_QUANTIZE` | 无 | 量化位数（4/8） |
+| `--quantize` | `WHISPER_QUANTIZE` | — | 量化位数（`4` 或 `8`） |
 | `--queue-max-size` | `WHISPER_QUEUE_MAX_SIZE` | `10` | 最大排队请求数，超出返回 503 |
 | `--queue-timeout` | `WHISPER_QUEUE_TIMEOUT` | `300` | 队列等待超时（秒） |
 | `--memory-cleanup-interval` | `WHISPER_MEMORY_CLEANUP_INTERVAL` | `20` | 每 N 次请求清理一次 Metal 缓存 |
-| `--log-level` | `WHISPER_LOG_LEVEL` | `info` | 日志级别（debug/info/warning/error） |
+| `--log-level` | `WHISPER_LOG_LEVEL` | `info` | 日志级别（`debug`/`info`/`warning`/`error`） |
 
-使用 `.env` 文件配置服务部署（放在项目根目录）：
+也可在项目根目录创建 `.env` 文件：
 
 ```bash
 WHISPER_PORT=8000
@@ -285,37 +305,51 @@ print(result.text)
 
 ## 项目架构
 
+<details>
+<summary><strong>请求链路与模块说明</strong></summary>
+
 ```
+HTTP → Router → Registry → Handler → Worker → mlx_whisper → Formatter → Response
+
 main.py（CLI 入口）
-  -> app/server.py（FastAPI 工厂、生命周期、Metal 清理中间件）
-       -> app/api/audio.py     POST /v1/audio/transcriptions
-       -> app/api/models.py    GET  /v1/models
-       -> app/api/queue.py     GET  /v1/queue/stats
-       -> app/registry.py      model_id → handler 查找
-       -> app/worker.py        单线程推理队列
-       -> app/handlers/
-            base.py            BaseHandler ABC + AudioCapable mixin
-            whisper.py         WhisperHandler（mlx_whisper.transcribe）
-       -> app/schemas/         Pydantic 模型 + dataclass
-       -> app/formatters.py    json/text/verbose_json/srt/vtt 格式转换
-       -> app/audio.py         上传文件保存/校验/清理
+  └─ app/server.py         FastAPI 工厂、生命周期、Metal 清理中间件
+       ├─ app/api/audio.py       POST /v1/audio/transcriptions
+       ├─ app/api/models.py      GET  /v1/models
+       ├─ app/api/queue.py       GET  /v1/queue/stats
+       ├─ app/registry.py        model_id → handler 查找
+       ├─ app/worker.py          单线程推理队列
+       ├─ app/handlers/
+       │    ├─ base.py           BaseHandler ABC + AudioCapable mixin
+       │    └─ whisper.py        WhisperHandler（mlx_whisper.transcribe）
+       ├─ app/schemas/           Pydantic 模型 + dataclass
+       ├─ app/formatters.py      json/text/verbose_json/srt/vtt 格式转换
+       └─ app/audio.py           上传文件保存/校验/清理
 ```
 
 **扩展方式：** 新增模型类型只需实现 `BaseHandler` + 能力 mixin（如 `ChatCapable`），添加 API Router，并在 lifespan 中注册。现有代码无需改动。
 
+</details>
+
 ## 开发
 
 ```bash
+# 安装（含开发依赖）
+pip install -e ".[dev]"
+
 # 运行测试
 pytest -v
 
-# 开发模式启动（热重载）
-uvicorn app.server:create_app --factory --reload
+# 运行单个测试
+pytest tests/api/test_audio.py::test_transcription_json_format -v
 
 # 代码检查
 ruff check .
+ruff check . --fix
+
+# 开发模式启动（热重载）
+uvicorn app.server:create_app --factory --reload
 ```
 
 ## License
 
-MIT
+[MIT](LICENSE)

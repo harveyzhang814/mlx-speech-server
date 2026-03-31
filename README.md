@@ -1,17 +1,33 @@
-# mlx-speech-server
+# mlx-whisper-server
 
-[中文文档](README_zh.md)
+<p align="center">
+  <a href="README_zh.md">中文文档</a> ·
+  <a href="#installation">Installation</a> ·
+  <a href="#quick-start">Quick Start</a> ·
+  <a href="#api-reference">API</a> ·
+  <a href="#configuration">Configuration</a>
+</p>
 
-OpenAI-compatible Whisper transcription API server, running natively on Apple Silicon via [MLX](https://github.com/ml-explore/mlx).
+<p align="center">
+  <img src="https://img.shields.io/badge/platform-Apple%20Silicon-black?logo=apple" alt="Apple Silicon">
+  <img src="https://img.shields.io/badge/python-3.11%2B-blue?logo=python&logoColor=white" alt="Python 3.11+">
+  <img src="https://img.shields.io/badge/API-OpenAI%20Compatible-412991?logo=openai&logoColor=white" alt="OpenAI Compatible">
+  <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT License">
+</p>
+
+OpenAI-compatible Whisper transcription API server running natively on Apple Silicon via [MLX](https://github.com/ml-explore/mlx).
 
 ## Features
 
 - **OpenAI API compatible** — drop-in replacement for `POST /v1/audio/transcriptions`
 - **All response formats** — `json`, `text`, `verbose_json`, `srt`, `vtt`
-- **Streaming** — segment-level SSE via `stream=true` (note: `mlx_whisper` does not support token-level streaming; full inference runs first, then segments are yielded sequentially)
-- **Apple Silicon optimized** — Metal GPU acceleration, periodic `mx.clear_cache()` to manage unified memory
+- **Streaming** — segment-level SSE via `stream=true`
+- **Apple Silicon optimized** — Metal GPU acceleration with periodic `mx.clear_cache()` for unified memory management
 - **Request queue** — configurable max size and timeout, with `GET /v1/queue/stats` monitoring
 - **Extensible** — handler abstraction supports future model types (LLM, embeddings, etc.)
+
+> [!NOTE]
+> `mlx_whisper` does not support token-level streaming. Full inference runs first, then segments are yielded sequentially over SSE.
 
 ## Requirements
 
@@ -21,16 +37,46 @@ OpenAI-compatible Whisper transcription API server, running natively on Apple Si
 ## Installation
 
 ```bash
-git clone https://github.com/your-org/mlx-speech-server.git
-cd mlx-speech-server
-python -m venv venv
-source venv/bin/activate
-pip install -e ".[dev]"
+git clone https://github.com/harveyzhang814/mlx-whisper-server.git
+cd mlx-whisper-server
 ```
 
 ## Quick Start
 
+### Managed service (recommended)
+
+The included service script auto-creates a virtualenv, installs dependencies, and registers a launchd service (auto-start on login, auto-restart on crash):
+
 ```bash
+./scripts/service.sh install
+./scripts/service.sh start
+./scripts/service.sh status
+```
+
+**All service commands:**
+
+| Command | Description |
+| :--- | :--- |
+| `./scripts/service.sh install` | Install and set up virtualenv |
+| `./scripts/service.sh uninstall` | Remove service |
+| `./scripts/service.sh upgrade` | Update dependencies |
+| `./scripts/service.sh start` | Start service |
+| `./scripts/service.sh stop` | Stop service |
+| `./scripts/service.sh restart` | Restart service |
+| `./scripts/service.sh status` | Show status and health check |
+| `./scripts/service.sh logs` | Tail logs |
+
+Default paths:
+- Virtualenv: `~/.local/venvs/mlx-whisper-server/`
+- Logs: `~/.local/logs/mlx-whisper-server/`
+
+### Manual start
+
+```bash
+python3 -m venv ~/.local/venvs/mlx-whisper-server
+source ~/.local/venvs/mlx-whisper-server/bin/activate
+pip install -e "."
+
 # Start with defaults (whisper-large-v3-turbo on port 8000)
 python main.py
 
@@ -45,27 +91,27 @@ The model downloads automatically from HuggingFace on first request.
 
 ## Supported Models
 
-All [mlx-community](https://huggingface.co/mlx-community) Whisper models are supported out of the box — just change `--model-path`:
+All [mlx-community](https://huggingface.co/mlx-community) Whisper models are supported — just change `--model-path`:
 
-| Model | Size | Min RAM | Recommended Chip | Use Case |
-|---|---|---|---|---|
-| `mlx-community/whisper-large-v3-turbo` | ~1.6GB | 8GB | M1 Pro+ | **Default.** Best speed/quality balance |
-| `mlx-community/whisper-large-v3-mlx` | ~3GB | 16GB | M1 Pro+ | Highest quality, slower |
-| `mlx-community/whisper-large-v3-mlx-4bit` | ~0.9GB | 8GB | M1+ | Low memory, slightly lower quality |
-| `mlx-community/whisper-large-v3-turbo-8bit` | ~0.8GB | 8GB | M1+ | Turbo quantized, lower memory |
-| `mlx-community/distil-whisper-large-v3` | ~1.5GB | 8GB | M1 Pro+ | Distilled, faster inference |
-| `mlx-community/whisper-medium-mlx` | ~1.5GB | 8GB | M1+ | Mid-size, multilingual |
-| `mlx-community/whisper-small-mlx` | ~0.5GB | 8GB | M1+ | Lightweight, good for real-time |
-| `mlx-community/whisper-tiny-mlx` | ~0.15GB | 8GB | M1+ | Smallest and fastest, limited quality |
+| Model | Size | Min RAM | Recommended | Use Case |
+| :--- | :--- | :--- | :--- | :--- |
+| `mlx-community/whisper-large-v3-turbo` | ~1.6 GB | 8 GB | M1 Pro+ | **Default** — best speed/quality balance |
+| `mlx-community/whisper-large-v3-mlx` | ~3 GB | 16 GB | M1 Pro+ | Highest quality, slower |
+| `mlx-community/whisper-large-v3-mlx-4bit` | ~0.9 GB | 8 GB | M1+ | Low memory, slightly lower quality |
+| `mlx-community/whisper-large-v3-turbo-8bit` | ~0.8 GB | 8 GB | M1+ | Turbo quantized, lower memory |
+| `mlx-community/distil-whisper-large-v3` | ~1.5 GB | 8 GB | M1 Pro+ | Distilled, faster inference |
+| `mlx-community/whisper-medium-mlx` | ~1.5 GB | 8 GB | M1+ | Mid-size, multilingual |
+| `mlx-community/whisper-small-mlx` | ~0.5 GB | 8 GB | M1+ | Lightweight, good for real-time |
+| `mlx-community/whisper-tiny-mlx` | ~0.15 GB | 8 GB | M1+ | Smallest and fastest, limited quality |
 
-> **Note:** RAM requirements include model weights + inference overhead (~2-3x model size). On 8GB devices, prefer quantized or small models to leave headroom for the OS and other apps. Unified memory is shared between CPU and GPU on Apple Silicon — the model and inference buffers compete with system memory.
+> [!TIP]
+> RAM requirements include model weights + inference overhead (~2–3× model size). On 8 GB devices, prefer quantized or small models to leave headroom for the OS. Apple Silicon uses unified memory shared between CPU and GPU — model weights, inference buffers, and system memory all compete for the same pool.
 
-Additional variants available: English-only (`.en`), quantized (2/4/8-bit), FP32, language-specific fine-tunes (German, etc.). See the full list at [mlx-community on HuggingFace](https://huggingface.co/collections/mlx-community/whisper).
+Additional variants: English-only (`.en`), quantized (2/4/8-bit), FP32, language-specific fine-tunes (German, etc.). See the full list at [mlx-community on HuggingFace](https://huggingface.co/collections/mlx-community/whisper).
 
 ## API Reference
 
-Server started, interactive API docs are available at:
-
+Once running, interactive docs are available at:
 - **Swagger UI**: `http://localhost:8000/docs`
 - **ReDoc**: `http://localhost:8000/redoc`
 
@@ -114,14 +160,14 @@ Content-Type: multipart/form-data
 **Parameters:**
 
 | Field | Type | Required | Description |
-|---|---|---|---|
-| `file` | file | Yes | Audio file (mp3, wav, m4a, ogg, flac, aac, webm) |
-| `model` | string | Yes | Model ID, e.g. `whisper-large-v3-turbo` |
-| `language` | string | No | ISO 639-1 code (auto-detect if omitted) |
-| `prompt` | string | No | Context hint for transcription |
-| `response_format` | string | No | `json` (default), `text`, `verbose_json`, `srt`, `vtt` |
-| `temperature` | float | No | 0.0-1.0, default 0.0 |
-| `stream` | bool | No | Enable SSE streaming, default false |
+| :--- | :--- | :---: | :--- |
+| `file` | file | ✓ | Audio file (mp3, wav, m4a, ogg, flac, aac, webm) |
+| `model` | string | ✓ | Model ID, e.g. `whisper-large-v3-turbo` |
+| `language` | string | — | ISO 639-1 code (auto-detect if omitted) |
+| `prompt` | string | — | Context hint for transcription |
+| `response_format` | string | — | `json` (default), `text`, `verbose_json`, `srt`, `vtt` |
+| `temperature` | float | — | 0.0–1.0, default `0.0` |
+| `stream` | bool | — | Enable SSE streaming, default `false` |
 
 **Examples:**
 
@@ -150,7 +196,8 @@ curl http://localhost:8000/v1/audio/transcriptions \
   -F language=zh
 ```
 
-**Response formats:**
+<details>
+<summary><strong>Response format examples</strong></summary>
 
 `json`:
 ```json
@@ -185,19 +232,21 @@ WEBVTT
  Hello world
 ```
 
-**Streaming SSE:**
+Streaming SSE:
 ```
 data: {"text": " Hello world"}
 
 data: [DONE]
 ```
 
-**Errors:**
+</details>
+
+**Error codes:**
 
 | Status | Code | Cause |
-|---|---|---|
+| :---: | :--- | :--- |
 | 400 | `model_not_found` | Unknown model ID |
-| 400 | `invalid_response_format` | Unsupported format |
+| 400 | `invalid_response_format` | Unsupported format value |
 | 415 | `unsupported_audio_format` | File type not supported |
 | 503 | `queue_full` | Too many concurrent requests |
 | 503 | `queue_timeout` | Request waited too long |
@@ -209,18 +258,32 @@ All errors follow OpenAI format:
 
 ## Configuration
 
-Configuration via CLI flags or environment variables (CLI takes priority):
+Configure via CLI flags or environment variables. CLI flags take priority.
 
 | CLI Flag | Env Var | Default | Description |
-|---|---|---|---|
+| :--- | :--- | :--- | :--- |
 | `--host` | `WHISPER_HOST` | `0.0.0.0` | Bind address |
 | `--port` | `WHISPER_PORT` | `8000` | Bind port |
 | `--model-path` | `WHISPER_MODEL_PATH` | `mlx-community/whisper-large-v3-turbo` | HuggingFace repo or local path |
-| `--quantize` | `WHISPER_QUANTIZE` | None | Use a pre-quantized model (4/8) |
+| `--quantize` | `WHISPER_QUANTIZE` | — | Pre-quantized model bits (`4` or `8`) |
 | `--queue-max-size` | `WHISPER_QUEUE_MAX_SIZE` | `10` | Max queued requests before 503 |
 | `--queue-timeout` | `WHISPER_QUEUE_TIMEOUT` | `300` | Seconds before queue timeout |
 | `--memory-cleanup-interval` | `WHISPER_MEMORY_CLEANUP_INTERVAL` | `20` | Clear Metal cache every N requests |
-| `--log-level` | `WHISPER_LOG_LEVEL` | `info` | Log level (debug/info/warning/error) |
+| `--log-level` | `WHISPER_LOG_LEVEL` | `info` | Log level (`debug`/`info`/`warning`/`error`) |
+
+You can also use a `.env` file in the project root:
+
+```bash
+WHISPER_PORT=8000
+WHISPER_MODEL_PATH=mlx-community/whisper-large-v3-turbo
+WHISPER_QUEUE_MAX_SIZE=10
+```
+
+After editing, reinstall and restart the service:
+
+```bash
+./scripts/service.sh install && ./scripts/service.sh restart
+```
 
 ## Using with OpenAI SDK
 
@@ -238,39 +301,55 @@ with open("audio.wav", "rb") as f:
 print(result.text)
 ```
 
+The API is fully compatible with OpenAI's `/v1/audio/transcriptions` — any client that supports the OpenAI SDK just needs a `base_url` change.
+
 ## Architecture
 
+<details>
+<summary><strong>Request flow and module map</strong></summary>
+
 ```
+HTTP → Router → Registry → Handler → Worker → mlx_whisper → Formatter → Response
+
 main.py (CLI)
-  -> app/server.py (FastAPI app factory, lifespan, Metal cleanup middleware)
-       -> app/api/audio.py     POST /v1/audio/transcriptions
-       -> app/api/models.py    GET  /v1/models
-       -> app/api/queue.py     GET  /v1/queue/stats
-       -> app/registry.py      model_id -> handler lookup
-       -> app/worker.py        single-thread inference queue
-       -> app/handlers/
-            base.py            BaseHandler ABC + AudioCapable mixin
-            whisper.py         WhisperHandler (mlx_whisper.transcribe)
-       -> app/schemas/         Pydantic models + dataclasses
-       -> app/formatters.py    json/text/verbose_json/srt/vtt conversion
-       -> app/audio.py         upload save/validate/cleanup
+  └─ app/server.py         FastAPI app factory, lifespan, Metal cleanup middleware
+       ├─ app/api/audio.py       POST /v1/audio/transcriptions
+       ├─ app/api/models.py      GET  /v1/models
+       ├─ app/api/queue.py       GET  /v1/queue/stats
+       ├─ app/registry.py        model_id → handler lookup
+       ├─ app/worker.py          single-thread inference queue
+       ├─ app/handlers/
+       │    ├─ base.py           BaseHandler ABC + AudioCapable mixin
+       │    └─ whisper.py        WhisperHandler (mlx_whisper.transcribe)
+       ├─ app/schemas/           Pydantic models + dataclasses
+       ├─ app/formatters.py      json/text/verbose_json/srt/vtt conversion
+       └─ app/audio.py           upload save/validate/cleanup
 ```
 
-**Extensibility:** To add a new model type, implement `BaseHandler` + a capability mixin (e.g. `ChatCapable`), add an API router, and register in the lifespan. Existing code requires no changes.
+**Extensibility:** To add a new model type, implement `BaseHandler` + a capability mixin (e.g. `ChatCapable`), add an API router, and register it in the lifespan. Existing code requires no changes.
+
+</details>
 
 ## Development
 
 ```bash
+# Install with dev dependencies
+pip install -e ".[dev]"
+
 # Run tests
 pytest -v
 
-# Run with auto-reload (development)
-uvicorn app.server:create_app --factory --reload
+# Run a single test
+pytest tests/api/test_audio.py::test_transcription_json_format -v
 
 # Lint
 ruff check .
+ruff check . --fix
+
+# Dev server with auto-reload
+uvicorn app.server:create_app --factory --reload
 ```
 
 ## License
 
-MIT
+[MIT](LICENSE)
