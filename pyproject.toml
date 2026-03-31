@@ -19,6 +19,7 @@ dependencies = [
 
 [project.scripts]
 mlx-speech-server = "app.cli:cli"
+mlx-speech-server-run = "app.server:run_from_env"
 
 [project.optional-dependencies]
 dev = [

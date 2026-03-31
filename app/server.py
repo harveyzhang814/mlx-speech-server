@@ -110,3 +110,8 @@ def run(config: ServerConfig) -> None:
     worker = InferenceWorker(max_size=config.queue_max_size, timeout=config.queue_timeout)
     app = create_app(config, registry, worker)
     uvicorn.run(app, host=config.host, port=config.port, log_level=config.log_level)
+
+
+def run_from_env() -> None:
+    """Console script entry point: reads config from env vars and starts server."""
+    run(ServerConfig.from_env())

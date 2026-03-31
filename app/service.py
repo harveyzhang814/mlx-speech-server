@@ -1,14 +1,38 @@
 """macOS launchd service management for mlx-speech-server."""
+import importlib.metadata
 import json
 import os
 import subprocess
 import sys
+import urllib.parse
 import urllib.request
 import xml.sax.saxutils
 from pathlib import Path
 
 SERVICE_LABEL = "com.local.mlx-speech-server"
-PROJECT_ROOT = Path(__file__).parent.parent
+
+
+def _find_project_root() -> Path:
+    """Return the project source directory.
+
+    Reads pip's direct_url.json to find where the package was installed from
+    (works for both ``pip install -e .`` and ``pipx install .``).
+    Falls back to the file-relative path when running from source.
+    """
+    try:
+        dist = importlib.metadata.distribution("mlx-speech-server")
+        raw = dist.read_text("direct_url.json")
+        if raw:
+            data = json.loads(raw)
+            url = data.get("url", "")
+            if url.startswith("file://"):
+                return Path(urllib.parse.urlparse(url).path)
+    except Exception:
+        pass
+    return Path(__file__).parent.parent
+
+
+PROJECT_ROOT = _find_project_root()
 VENV_DIR = Path.home() / ".local/venvs/mlx-speech-server"
 LOG_DIR = Path.home() / ".local/logs/mlx-speech-server"
 PLIST_PATH = Path.home() / "Library/LaunchAgents" / f"{SERVICE_LABEL}.plist"
@@ -51,8 +75,7 @@ def _build_plist(env_vars: dict[str, str]) -> str:
         f"        <key>{xml.sax.saxutils.escape(k)}</key>\n        <string>{xml.sax.saxutils.escape(v)}</string>\n"
         for k, v in env_vars.items()
     )
-    python = VENV_DIR / "bin/python"
-    main = PROJECT_ROOT / "main.py"
+    runner = VENV_DIR / "bin/mlx-speech-server-run"
     path = f"{VENV_DIR}/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
     return f"""<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -62,11 +85,8 @@ def _build_plist(env_vars: dict[str, str]) -> str:
     <string>{SERVICE_LABEL}</string>
     <key>ProgramArguments</key>
     <array>
-        <string>{python}</string>
-        <string>{main}</string>
+        <string>{runner}</string>
     </array>
-    <key>WorkingDirectory</key>
-    <string>{PROJECT_ROOT}</string>
     <key>EnvironmentVariables</key>
     <dict>
         <key>PATH</key>
