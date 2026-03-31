@@ -111,30 +111,38 @@ def test_build_plist_escapes_xml_special_chars():
     assert "a&b<c>d" not in plist
 
 
-def test_is_editable_install_true(monkeypatch):
+def test_is_local_install_true_for_editable(monkeypatch):
     import importlib.metadata as _meta
     fake_dist = MagicMock()
     fake_dist.read_text.return_value = '{"url": "file:///home/user/project", "dir_info": {"editable": true}}'
     monkeypatch.setattr(_meta, "distribution", lambda _: fake_dist)
-    assert service._is_editable_install() is True
+    assert service._is_local_install() is True
 
 
-def test_is_editable_install_false_for_pypi(monkeypatch):
+def test_is_local_install_true_for_pipx(monkeypatch):
+    import importlib.metadata as _meta
+    fake_dist = MagicMock()
+    fake_dist.read_text.return_value = '{"url": "file:///home/user/project", "dir_info": {"editable": false}}'
+    monkeypatch.setattr(_meta, "distribution", lambda _: fake_dist)
+    assert service._is_local_install() is True
+
+
+def test_is_local_install_false_for_pypi(monkeypatch):
     import importlib.metadata as _meta
     fake_dist = MagicMock()
     fake_dist.read_text.return_value = '{"url": "https://files.pythonhosted.org/...", "dir_info": {}}'
     monkeypatch.setattr(_meta, "distribution", lambda _: fake_dist)
-    assert service._is_editable_install() is False
+    assert service._is_local_install() is False
 
 
-def test_is_editable_install_false_when_no_metadata(monkeypatch):
+def test_is_local_install_false_when_no_metadata(monkeypatch):
     import importlib.metadata as _meta
 
     def raise_not_found(_):
         raise _meta.PackageNotFoundError()
 
     monkeypatch.setattr(_meta, "distribution", raise_not_found)
-    assert service._is_editable_install() is False
+    assert service._is_local_install() is False
 
 
 def test_get_project_dir_returns_path_for_editable(monkeypatch):
@@ -145,23 +153,23 @@ def test_get_project_dir_returns_path_for_editable(monkeypatch):
     assert service._get_project_dir() == Path("/home/user/myproject")
 
 
-def test_get_project_dir_raises_for_non_editable(monkeypatch):
+def test_get_project_dir_raises_for_non_local(monkeypatch):
     import importlib.metadata as _meta
     fake_dist = MagicMock()
     fake_dist.read_text.return_value = '{"url": "https://files.pythonhosted.org/...", "dir_info": {}}'
     monkeypatch.setattr(_meta, "distribution", lambda _: fake_dist)
-    with pytest.raises(RuntimeError, match="editable"):
+    with pytest.raises(RuntimeError, match="local install"):
         service._get_project_dir()
 
 
-def test_get_install_args_editable(monkeypatch):
-    monkeypatch.setattr(service, "_is_editable_install", lambda: True)
+def test_get_install_args_local(monkeypatch):
+    monkeypatch.setattr(service, "_is_local_install", lambda: True)
     monkeypatch.setattr(service, "_get_project_dir", lambda: Path("/home/user/project"))
     assert service._get_install_args() == ["-e", "/home/user/project"]
 
 
 def test_get_install_args_pypi(monkeypatch):
-    monkeypatch.setattr(service, "_is_editable_install", lambda: False)
+    monkeypatch.setattr(service, "_is_local_install", lambda: False)
     assert service._get_install_args() == ["mlx-speech-server"]
 
 
@@ -358,7 +366,7 @@ def test_restart_raises_when_not_installed(fake_paths):
 
 
 def test_upgrade_editable_returns_up_to_date(fake_paths, monkeypatch):
-    monkeypatch.setattr(service, "_is_editable_install", lambda: True)
+    monkeypatch.setattr(service, "_is_local_install", lambda: True)
     monkeypatch.setattr(service, "_get_project_dir", lambda: Path("/home/user/project"))
 
     def fake_run(args, **kwargs):
@@ -373,7 +381,7 @@ def test_upgrade_editable_returns_up_to_date(fake_paths, monkeypatch):
 
 
 def test_upgrade_editable_installs_when_new_commits(fake_paths, monkeypatch):
-    monkeypatch.setattr(service, "_is_editable_install", lambda: True)
+    monkeypatch.setattr(service, "_is_local_install", lambda: True)
     monkeypatch.setattr(service, "_get_project_dir", lambda: Path("/home/user/project"))
 
     calls = []
@@ -393,7 +401,7 @@ def test_upgrade_editable_installs_when_new_commits(fake_paths, monkeypatch):
 
 
 def test_upgrade_editable_skips_pip_when_up_to_date(fake_paths, monkeypatch):
-    monkeypatch.setattr(service, "_is_editable_install", lambda: True)
+    monkeypatch.setattr(service, "_is_local_install", lambda: True)
     monkeypatch.setattr(service, "_get_project_dir", lambda: Path("/home/user/project"))
 
     calls = []
@@ -412,7 +420,7 @@ def test_upgrade_editable_skips_pip_when_up_to_date(fake_paths, monkeypatch):
 
 
 def test_upgrade_editable_raises_on_git_failure(fake_paths, monkeypatch):
-    monkeypatch.setattr(service, "_is_editable_install", lambda: True)
+    monkeypatch.setattr(service, "_is_local_install", lambda: True)
     monkeypatch.setattr(service, "_get_project_dir", lambda: Path("/home/user/project"))
 
     def raise_error(args, **kwargs):
@@ -424,7 +432,7 @@ def test_upgrade_editable_raises_on_git_failure(fake_paths, monkeypatch):
 
 
 def test_upgrade_pypi_runs_pip_upgrade(fake_paths, monkeypatch):
-    monkeypatch.setattr(service, "_is_editable_install", lambda: False)
+    monkeypatch.setattr(service, "_is_local_install", lambda: False)
 
     calls = []
     def fake_run(args, **kwargs):
@@ -442,7 +450,7 @@ def test_upgrade_pypi_runs_pip_upgrade(fake_paths, monkeypatch):
 
 
 def test_upgrade_pypi_returns_up_to_date_when_already_satisfied(fake_paths, monkeypatch):
-    monkeypatch.setattr(service, "_is_editable_install", lambda: False)
+    monkeypatch.setattr(service, "_is_local_install", lambda: False)
 
     def fake_run(args, **kwargs):
         m = MagicMock()

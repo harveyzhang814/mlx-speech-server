@@ -33,43 +33,45 @@ def _check_installed() -> None:
         raise RuntimeError("Service not installed. Run: mlx-speech-server install")
 
 
-def _is_editable_install() -> bool:
-    """Return True if the package was installed in editable mode (local clone)."""
-    try:
-        dist = importlib.metadata.distribution("mlx-speech-server")
-        raw = dist.read_text("direct_url.json")
-        if raw:
-            data = json.loads(raw)
-            return bool(data.get("dir_info", {}).get("editable"))
-    except Exception:
-        pass
-    return False
+def _is_local_install() -> bool:
+    """Return True if the package was installed from a local directory (file:// URL).
 
-
-def _get_project_dir() -> Path:
-    """Return the project source directory for an editable install.
-
-    Raises RuntimeError if not an editable install.
+    Covers both editable (pip install -e .) and non-editable (pipx install .) installs.
     """
     try:
         dist = importlib.metadata.distribution("mlx-speech-server")
         raw = dist.read_text("direct_url.json")
         if raw:
             data = json.loads(raw)
-            if data.get("dir_info", {}).get("editable"):
-                url = data.get("url", "")
-                if url.startswith("file://"):
-                    return Path(urllib.parse.urlparse(url).path)
+            return data.get("url", "").startswith("file://")
+    except Exception:
+        pass
+    return False
+
+
+def _get_project_dir() -> Path:
+    """Return the project source directory for a local install.
+
+    Raises RuntimeError if not a local install.
+    """
+    try:
+        dist = importlib.metadata.distribution("mlx-speech-server")
+        raw = dist.read_text("direct_url.json")
+        if raw:
+            data = json.loads(raw)
+            url = data.get("url", "")
+            if url.startswith("file://"):
+                return Path(urllib.parse.urlparse(url).path)
     except Exception:
         pass
     raise RuntimeError(
-        "Not an editable install. Use 'pip install -e .' for local clone upgrades."
+        "Not a local install. Cannot determine project directory."
     )
 
 
 def _get_install_args() -> list[str]:
     """Return pip install arguments for installing into the service venv."""
-    if _is_editable_install():
+    if _is_local_install():
         return ["-e", str(_get_project_dir())]
     return ["mlx-speech-server"]
 
@@ -288,7 +290,7 @@ def upgrade() -> dict[str, str]:
     """
     _require_darwin()
 
-    if _is_editable_install():
+    if _is_local_install():
         project_dir = _get_project_dir()
         result = subprocess.run(
             ["git", "-C", str(project_dir), "pull", "origin", "main"],
