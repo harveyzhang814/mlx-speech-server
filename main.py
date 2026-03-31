@@ -13,7 +13,7 @@ from app.server import run
 @click.option("--memory-cleanup-interval", default=None, type=int, help="Clear Metal cache every N requests (default: 20)")
 @click.option("--log-level", default=None, type=click.Choice(["debug", "info", "warning", "error"]))
 def cli(host, port, model_path, quantize, queue_max_size, queue_timeout, memory_cleanup_interval, log_level):
-    """mlx-whisper-server: OpenAI-compatible Whisper API on Apple Silicon."""
+    """mlx-speech-server: OpenAI-compatible Whisper API on Apple Silicon."""
     config = ServerConfig.from_env()
 
     # CLI args override env vars

@@ -42,7 +42,7 @@ def create_app(
         mx.clear_cache()
         gc.collect()
 
-    app = FastAPI(title="mlx-whisper-server", version="0.1.0", lifespan=lifespan)
+    app = FastAPI(title="mlx-speech-server", version="0.1.0", lifespan=lifespan)
 
     # Routers
     app.include_router(create_models_router(registry))

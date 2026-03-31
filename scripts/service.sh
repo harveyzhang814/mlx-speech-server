@@ -1,10 +1,10 @@
 #!/bin/bash
-# mlx-whisper-server launchd service manager
+# mlx-speech-server launchd service manager
 # Usage: ./scripts/service.sh [install|uninstall|start|stop|restart|status|logs]
 
 set -euo pipefail
 
-SERVICE_LABEL="com.local.mlx-whisper-server"
+SERVICE_LABEL="com.local.mlx-speech-server"
 PLIST_PATH="$HOME/Library/LaunchAgents/${SERVICE_LABEL}.plist"
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 PYTHON="${PROJECT_DIR}/venv/bin/python"
@@ -194,7 +194,7 @@ case "${1:-help}" in
     status)    cmd_status ;;
     logs)      cmd_logs ;;
     *)
-        echo "mlx-whisper-server service manager"
+        echo "mlx-speech-server service manager"
         echo ""
         echo "Usage: $0 <command>"
         echo ""

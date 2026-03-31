@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "mlx-whisper-server"
+name = "mlx-speech-server"
 version = "0.1.0"
 requires-python = ">=3.11"
 dependencies = [
@@ -18,7 +18,7 @@ dependencies = [
 ]
 
 [project.scripts]
-mlx-whisper-server = "main:cli"
+mlx-speech-server = "main:cli"
 
 [project.optional-dependencies]
 dev = [

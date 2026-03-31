@@ -1,4 +1,4 @@
-# mlx-whisper-server
+# mlx-speech-server
 
 OpenAI-compatible Whisper transcription API server, running natively on Apple Silicon via [MLX](https://github.com/ml-explore/mlx).
 
@@ -19,8 +19,8 @@ OpenAI-compatible Whisper transcription API server, running natively on Apple Si
 ## Installation
 
 ```bash
-git clone https://github.com/your-org/mlx-whisper-server.git
-cd mlx-whisper-server
+git clone https://github.com/your-org/mlx-speech-server.git
+cd mlx-speech-server
 python -m venv venv
 source venv/bin/activate
 pip install -e ".[dev]"
