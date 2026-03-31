@@ -18,15 +18,30 @@ class ServerConfig:
     def from_env(cls) -> ServerConfig:
         def _int(key: str, default: int) -> int:
             val = os.environ.get(key)
-            return int(val) if val is not None else default
+            if val is None:
+                return default
+            try:
+                return int(val)
+            except ValueError:
+                raise ValueError(f"Invalid value for {key}={val!r}: expected an integer")
 
         def _float(key: str, default: float) -> float:
             val = os.environ.get(key)
-            return float(val) if val is not None else default
+            if val is None:
+                return default
+            try:
+                return float(val)
+            except ValueError:
+                raise ValueError(f"Invalid value for {key}={val!r}: expected a float")
 
         def _optional_int(key: str) -> int | None:
             val = os.environ.get(key)
-            return int(val) if val is not None else None
+            if val is None:
+                return None
+            try:
+                return int(val)
+            except ValueError:
+                raise ValueError(f"Invalid value for {key}={val!r}: expected an integer")
 
         return cls(
             host=os.environ.get("WHISPER_HOST", "0.0.0.0"),

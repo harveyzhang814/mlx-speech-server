@@ -1,4 +1,3 @@
-import os
 import pytest
 from app.config import ServerConfig
 
@@ -41,3 +40,9 @@ def test_from_env_uses_defaults_when_vars_absent(monkeypatch):
     assert config.port == 8000
     assert config.model_path == "mlx-community/whisper-large-v3-turbo"
     assert config.quantize is None
+
+
+def test_from_env_raises_on_invalid_int(monkeypatch):
+    monkeypatch.setenv("WHISPER_PORT", "abc")
+    with pytest.raises(ValueError, match="WHISPER_PORT"):
+        ServerConfig.from_env()
