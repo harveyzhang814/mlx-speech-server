@@ -18,7 +18,7 @@ dependencies = [
 ]
 
 [project.scripts]
-mlx-speech-server = "main:cli"
+mlx-speech-server = "cli:cli"
 
 [project.optional-dependencies]
 dev = [
