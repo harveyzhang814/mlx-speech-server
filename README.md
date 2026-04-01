@@ -174,7 +174,7 @@ Content-Type: multipart/form-data
 | :--- | :--- | :---: | :--- |
 | `file` | file | ✓ | Audio file (mp3, wav, m4a, ogg, flac, aac, webm) |
 | `model` | string | ✓ | Model ID, e.g. `whisper-large-v3-turbo` |
-| `language` | string | — | ISO 639-1 code (auto-detect if omitted) |
+| `language` | string | — | ISO 639-1 code (auto-detect if omitted). Common locale tags (e.g. `zh-CN`, `en-US`) are normalized to Whisper codes (`zh`, `en`). |
 | `prompt` | string | — | Context hint for transcription |
 | `response_format` | string | — | `json` (default), `text`, `verbose_json`, `srt`, `vtt` |
 | `temperature` | float | — | 0.0–1.0, default `0.0` |

@@ -174,7 +174,7 @@ Content-Type: multipart/form-data
 | :--- | :--- | :---: | :--- |
 | `file` | file | ✓ | 音频文件（mp3、wav、m4a、ogg、flac、aac、webm） |
 | `model` | string | ✓ | 模型 ID，如 `whisper-large-v3-turbo` |
-| `language` | string | — | ISO 639-1 语言代码，留空自动检测 |
+| `language` | string | — | ISO 639-1 语言代码，留空自动检测。常见 locale（如 `zh-CN`、`en-US`）会规范为 Whisper 使用的语种码（如 `zh`、`en`）。 |
 | `prompt` | string | — | 转录上下文提示 |
 | `response_format` | string | — | `json`（默认）、`text`、`verbose_json`、`srt`、`vtt` |
 | `temperature` | float | — | 0.0–1.0，默认 `0.0` |

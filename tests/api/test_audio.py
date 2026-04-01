@@ -1,12 +1,9 @@
-import json
-import pytest
 from pathlib import Path
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 from app.api.audio import create_audio_router
 from app.registry import ModelRegistry
-from app.worker import InferenceWorker
 from app.handlers.base import BaseHandler, AudioCapable
 from app.schemas.common import ModelCard
 from app.schemas.audio import TranscriptionParams, TranscriptionResult, SegmentResult
@@ -31,6 +28,15 @@ class FakeAudioHandler(BaseHandler, AudioCapable):
     async def transcribe_stream(self, audio_path: Path, params: TranscriptionParams) -> AsyncGenerator[str, None]:
         yield 'data: {"text": " Hello world"}\n\n'
         yield "data: [DONE]\n\n"
+
+
+class CapturingAudioHandler(FakeAudioHandler):
+    def __init__(self) -> None:
+        self.last_params: TranscriptionParams | None = None
+
+    async def transcribe(self, audio_path: Path, params: TranscriptionParams) -> TranscriptionResult:
+        self.last_params = params
+        return FAKE_RESULT
 
 
 def _make_client() -> TestClient:
@@ -89,6 +95,29 @@ def test_transcription_vtt_format(tmp_wav_file):
     resp = client.post("/v1/audio/transcriptions", **form)
     assert resp.status_code == 200
     assert resp.text.startswith("WEBVTT")
+
+
+def test_transcription_normalizes_zh_cn_language_param(tmp_wav_file):
+    registry = ModelRegistry()
+    handler = CapturingAudioHandler()
+    registry.register("whisper-large-v3-turbo", handler)
+    worker = MagicMock()
+    app = FastAPI()
+    app.include_router(create_audio_router(registry, worker))
+    client = TestClient(app)
+    resp = client.post("/v1/audio/transcriptions", **_audio_form(tmp_wav_file, {"language": "zh-CN"}))
+    assert resp.status_code == 200
+    assert handler.last_params is not None
+    assert handler.last_params.language == "zh"
+
+
+def test_transcription_unsupported_language_returns_400(tmp_wav_file):
+    client = _make_client()
+    resp = client.post("/v1/audio/transcriptions", **_audio_form(tmp_wav_file, {"language": "qq"}))
+    assert resp.status_code == 400
+    body = resp.json()
+    assert body["error"]["code"] == "unsupported_language"
+    assert "invalid_request_error" == body["error"]["type"]
 
 
 def test_transcription_unknown_model_returns_400(tmp_wav_file):

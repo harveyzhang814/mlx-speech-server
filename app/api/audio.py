@@ -1,14 +1,14 @@
 from __future__ import annotations
 import json
-from fastapi import APIRouter, Depends, Form, Header, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, Form, Header, UploadFile
 from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
-from loguru import logger
 
 from app.audio import UnsupportedAudioFormatError, cleanup_temp_file, save_upload_file
 from app.formatters import format_transcription
 from app.handlers.base import AudioCapable
 from app.registry import ModelNotFoundError, ModelRegistry
 from app.schemas.audio import ResponseFormat, TranscriptionParams
+from app.whisper_language import resolve_whisper_language
 from app.worker import InferenceWorker
 
 
@@ -74,6 +74,15 @@ def create_audio_router(registry: ModelRegistry, worker: InferenceWorker) -> API
                 "capability_not_supported",
             )
 
+        normalized_language, language_error = resolve_whisper_language(language)
+        if language_error is not None:
+            return _error_response(
+                400,
+                language_error,
+                "invalid_request_error",
+                "unsupported_language",
+            )
+
         # Save upload
         try:
             audio_path = await save_upload_file(file)
@@ -86,7 +95,7 @@ def create_audio_router(registry: ModelRegistry, worker: InferenceWorker) -> API
             )
 
         params = TranscriptionParams(
-            language=language,
+            language=normalized_language,
             prompt=prompt,
             temperature=temperature,
         )
