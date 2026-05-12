@@ -24,6 +24,7 @@
 - **流式输出** — 通过 `stream=true` 启用 SSE 推送
 - **Apple Silicon 优化** — Metal GPU 加速，定期调用 `mx.clear_cache()` 管理统一内存
 - **请求队列** — 可配置队列大小和超时，提供 `GET /v1/queue/stats` 监控接口
+- **任务取消** — 通过 `DELETE /v1/audio/transcriptions/{task_id}` 取消排队中或推理中的请求
 - **可扩展架构** — Handler 抽象层支持未来接入其他模型类型（LLM、Embeddings 等）
 
 > [!NOTE]
@@ -158,8 +159,10 @@ GET /v1/queue/stats
 ```
 
 ```json
-{"queue_size": 0, "queue_max_size": 10, "active": false}
+{"queue_size": 0, "queue_max_size": 10, "active": false, "active_status": "idle"}
 ```
+
+`active_status` 取值：`"idle"` — 无推理任务；`"running"` — 推理进行中；`"cancelling"` — 推理进行中但已标记取消（结果将被丢弃）。
 
 ### 语音转录
 
@@ -167,6 +170,8 @@ GET /v1/queue/stats
 POST /v1/audio/transcriptions
 Content-Type: multipart/form-data
 ```
+
+每个响应均包含 `X-Task-ID` 响应头，值为唯一标识本次请求的 UUID。可用于取消该请求（参见[取消转录](#取消转录)）。
 
 **请求参数：**
 
@@ -258,6 +263,7 @@ data: [DONE]
 | :---: | :--- | :--- |
 | 400 | `model_not_found` | 未知模型 ID |
 | 400 | `invalid_response_format` | 不支持的响应格式 |
+| 400 | `unsupported_language` | Whisper 不支持的语言代码 |
 | 415 | `unsupported_audio_format` | 不支持的音频格式 |
 | 503 | `queue_full` | 并发请求过多 |
 | 503 | `queue_timeout` | 请求等待超时 |
@@ -266,6 +272,38 @@ data: [DONE]
 ```json
 {"error": {"message": "...", "type": "...", "code": "..."}}
 ```
+
+### 取消转录
+
+通过转录响应头 `X-Task-ID` 中的 UUID 取消请求。
+
+- **排队中的请求**：立即取消，等待中的请求收到错误响应。
+- **推理中的请求**：立即返回取消成功——Metal 线程上的推理仍会继续执行至完成，但结果会被丢弃。在此期间，`GET /v1/queue/stats` 中 `active_status` 显示为 `"cancelling"`。
+
+**单个取消：**
+```
+DELETE /v1/audio/transcriptions/{task_id}
+```
+
+```json
+{"status": "cancelled", "task_id": "550e8400-e29b-41d4-a716-446655440000"}
+```
+
+task_id 不存在或已完成时返回 404，错误码 `task_not_found`。
+
+**批量取消**（一次性取消多个任务，例如同一逻辑任务的所有分段）：
+```
+DELETE /v1/audio/transcriptions
+Content-Type: application/json
+
+{"task_ids": ["id1", "id2", "id3"]}
+```
+
+```json
+{"cancelled": ["id1", "id3"], "not_found": ["id2"]}
+```
+
+始终返回 200。`not_found` 中的条目表示对应任务已完成或从未存在——批量操作中不视为错误。
 
 ## 配置
 
@@ -324,7 +362,7 @@ HTTP → Router → Registry → Handler → Worker → mlx_whisper → Formatte
 
 main.py（CLI 入口）
   └─ app/server.py         FastAPI 工厂、生命周期、Metal 清理中间件
-       ├─ app/api/audio.py       POST /v1/audio/transcriptions
+       ├─ app/api/audio.py       POST /v1/audio/transcriptions, DELETE /v1/audio/transcriptions/{task_id}
        ├─ app/api/models.py      GET  /v1/models
        ├─ app/api/queue.py       GET  /v1/queue/stats
        ├─ app/registry.py        model_id → handler 查找

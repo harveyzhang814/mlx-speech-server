@@ -24,6 +24,7 @@ OpenAI-compatible Whisper transcription API server running natively on Apple Sil
 - **Streaming** — segment-level SSE via `stream=true`
 - **Apple Silicon optimized** — Metal GPU acceleration with periodic `mx.clear_cache()` for unified memory management
 - **Request queue** — configurable max size and timeout, with `GET /v1/queue/stats` monitoring
+- **Task cancellation** — cancel queued or in-progress requests via `DELETE /v1/audio/transcriptions/{task_id}`
 - **Extensible** — handler abstraction supports future model types (LLM, embeddings, etc.)
 
 > [!NOTE]
@@ -158,8 +159,10 @@ GET /v1/queue/stats
 ```
 
 ```json
-{"queue_size": 0, "queue_max_size": 10, "active": false}
+{"queue_size": 0, "queue_max_size": 10, "active": false, "active_status": "idle"}
 ```
+
+`active_status` values: `"idle"` — no inference running; `"running"` — inference in progress; `"cancelling"` — inference running but marked for cancellation (result will be discarded).
 
 ### Audio Transcription
 
@@ -167,6 +170,8 @@ GET /v1/queue/stats
 POST /v1/audio/transcriptions
 Content-Type: multipart/form-data
 ```
+
+Every response includes an `X-Task-ID` header containing a UUID that uniquely identifies this request. Use it to cancel the request if needed (see [Cancel Transcription](#cancel-transcription)).
 
 **Parameters:**
 
@@ -258,6 +263,7 @@ data: [DONE]
 | :---: | :--- | :--- |
 | 400 | `model_not_found` | Unknown model ID |
 | 400 | `invalid_response_format` | Unsupported format value |
+| 400 | `unsupported_language` | Language code not supported by Whisper |
 | 415 | `unsupported_audio_format` | File type not supported |
 | 503 | `queue_full` | Too many concurrent requests |
 | 503 | `queue_timeout` | Request waited too long |
@@ -266,6 +272,38 @@ All errors follow OpenAI format:
 ```json
 {"error": {"message": "...", "type": "...", "code": "..."}}
 ```
+
+### Cancel Transcription
+
+Cancels requests by the `task_id` values returned in `X-Task-ID` response headers.
+
+- **Queued request**: cancelled immediately; the waiting request receives an error.
+- **Running inference**: marked for cancellation and returns immediately — inference continues on the Metal thread but the result is discarded. The task appears as `"cancelling"` in `GET /v1/queue/stats` until inference finishes.
+
+**Single cancel:**
+```
+DELETE /v1/audio/transcriptions/{task_id}
+```
+
+```json
+{"status": "cancelled", "task_id": "550e8400-e29b-41d4-a716-446655440000"}
+```
+
+Returns 404 with `task_not_found` if the task is unknown or already completed.
+
+**Batch cancel** (cancel multiple tasks at once — e.g. all segments of a logical job):
+```
+DELETE /v1/audio/transcriptions
+Content-Type: application/json
+
+{"task_ids": ["id1", "id2", "id3"]}
+```
+
+```json
+{"cancelled": ["id1", "id3"], "not_found": ["id2"]}
+```
+
+Always returns 200. `not_found` entries are tasks that were already completed or never existed — not treated as an error in batch context.
 
 ## Configuration
 
@@ -324,7 +362,7 @@ HTTP → Router → Registry → Handler → Worker → mlx_whisper → Formatte
 
 main.py (CLI)
   └─ app/server.py         FastAPI app factory, lifespan, Metal cleanup middleware
-       ├─ app/api/audio.py       POST /v1/audio/transcriptions
+       ├─ app/api/audio.py       POST /v1/audio/transcriptions, DELETE /v1/audio/transcriptions/{task_id}
        ├─ app/api/models.py      GET  /v1/models
        ├─ app/api/queue.py       GET  /v1/queue/stats
        ├─ app/registry.py        model_id → handler lookup
