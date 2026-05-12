@@ -24,10 +24,11 @@ def test_error_response_structure():
 
 
 def test_queue_stats_fields():
-    stats = QueueStats(queue_size=2, queue_max_size=10, active=True)
+    stats = QueueStats(queue_size=2, queue_max_size=10, active=True, active_status="running")
     assert stats.queue_size == 2
     assert stats.queue_max_size == 10
     assert stats.active is True
+    assert stats.active_status == "running"
 
 
 def test_transcription_params_defaults():

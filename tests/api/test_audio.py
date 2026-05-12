@@ -23,9 +23,9 @@ class FakeAudioHandler(BaseHandler, AudioCapable):
     async def cleanup(self) -> None: pass
     def model_info(self) -> ModelCard:
         return ModelCard(id="whisper-large-v3-turbo")
-    async def transcribe(self, audio_path: Path, params: TranscriptionParams) -> TranscriptionResult:
+    async def transcribe(self, audio_path: Path, params: TranscriptionParams, task_id: str) -> TranscriptionResult:
         return FAKE_RESULT
-    async def transcribe_stream(self, audio_path: Path, params: TranscriptionParams) -> AsyncGenerator[str, None]:
+    async def transcribe_stream(self, audio_path: Path, params: TranscriptionParams, task_id: str) -> AsyncGenerator[str, None]:
         yield 'data: {"text": " Hello world"}\n\n'
         yield "data: [DONE]\n\n"
 
@@ -34,7 +34,7 @@ class CapturingAudioHandler(FakeAudioHandler):
     def __init__(self) -> None:
         self.last_params: TranscriptionParams | None = None
 
-    async def transcribe(self, audio_path: Path, params: TranscriptionParams) -> TranscriptionResult:
+    async def transcribe(self, audio_path: Path, params: TranscriptionParams, task_id: str) -> TranscriptionResult:
         self.last_params = params
         return FAKE_RESULT
 
@@ -147,3 +147,30 @@ def test_transcription_streaming_returns_sse(tmp_wav_file):
         content = resp.read().decode()
     assert "data:" in content
     assert "[DONE]" in content
+
+
+def test_transcription_response_includes_task_id_header(tmp_wav_file):
+    client = _make_client()
+    resp = client.post("/v1/audio/transcriptions", **_audio_form(tmp_wav_file))
+    assert resp.status_code == 200
+    task_id = resp.headers.get("x-task-id")
+    assert task_id is not None
+    assert len(task_id) == 36  # UUID format
+
+
+def test_transcription_each_request_gets_unique_task_id(tmp_wav_file):
+    client = _make_client()
+    r1 = client.post("/v1/audio/transcriptions", **_audio_form(tmp_wav_file))
+    r2 = client.post("/v1/audio/transcriptions", **_audio_form(tmp_wav_file))
+    assert r1.headers["x-task-id"] != r2.headers["x-task-id"]
+
+
+def test_streaming_response_includes_task_id_header(tmp_wav_file):
+    client = _make_client()
+    form = _audio_form(tmp_wav_file, {"stream": "true"})
+    with client.stream("POST", "/v1/audio/transcriptions", **form) as resp:
+        assert resp.status_code == 200
+        task_id = resp.headers.get("x-task-id")
+        resp.read()
+    assert task_id is not None
+    assert len(task_id) == 36

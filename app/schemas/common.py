@@ -19,3 +19,4 @@ class QueueStats(BaseModel):
     queue_size: int
     queue_max_size: int
     active: bool
+    active_status: str

@@ -13,6 +13,7 @@ def create_queue_router(worker: InferenceWorker) -> APIRouter:
             queue_size=worker.queue_size,
             queue_max_size=worker.max_size,
             active=worker.active,
+            active_status=worker.active_status,
         )
 
     return router

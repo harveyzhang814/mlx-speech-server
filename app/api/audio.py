@@ -1,7 +1,13 @@
 from __future__ import annotations
 import json
-from fastapi import APIRouter, Depends, Form, Header, UploadFile
+import uuid
+from fastapi import APIRouter, Body, Depends, Form, Header, UploadFile
 from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
+from pydantic import BaseModel
+
+
+class BatchCancelRequest(BaseModel):
+    task_ids: list[str]
 
 from app.audio import UnsupportedAudioFormatError, cleanup_temp_file, save_upload_file
 from app.formatters import format_transcription
@@ -9,7 +15,7 @@ from app.handlers.base import AudioCapable
 from app.registry import ModelNotFoundError, ModelRegistry
 from app.schemas.audio import ResponseFormat, TranscriptionParams
 from app.whisper_language import resolve_whisper_language
-from app.worker import InferenceWorker
+from app.worker import InferenceWorker, TaskNotFoundError
 
 
 async def _get_api_key(authorization: str | None = Header(None)) -> None:
@@ -32,6 +38,31 @@ def _error_response(status_code: int, message: str, error_type: str, code: str) 
 
 def create_audio_router(registry: ModelRegistry, worker: InferenceWorker) -> APIRouter:
     router = APIRouter()
+
+    @router.delete("/v1/audio/transcriptions")
+    async def batch_cancel_transcriptions(body: BatchCancelRequest):
+        cancelled = []
+        not_found = []
+        for task_id in body.task_ids:
+            try:
+                worker.cancel(task_id)
+                cancelled.append(task_id)
+            except TaskNotFoundError:
+                not_found.append(task_id)
+        return JSONResponse({"cancelled": cancelled, "not_found": not_found})
+
+    @router.delete("/v1/audio/transcriptions/{task_id}")
+    async def cancel_transcription(task_id: str):
+        try:
+            worker.cancel(task_id)
+        except TaskNotFoundError:
+            return _error_response(
+                404,
+                f"Task '{task_id}' not found.",
+                "invalid_request_error",
+                "task_not_found",
+            )
+        return JSONResponse({"status": "cancelled", "task_id": task_id})
 
     @router.post("/v1/audio/transcriptions")
     async def transcribe(
@@ -94,6 +125,7 @@ def create_audio_router(registry: ModelRegistry, worker: InferenceWorker) -> API
                 "unsupported_audio_format",
             )
 
+        task_id = str(uuid.uuid4())
         params = TranscriptionParams(
             language=normalized_language,
             prompt=prompt,
@@ -103,24 +135,28 @@ def create_audio_router(registry: ModelRegistry, worker: InferenceWorker) -> API
         if stream:
             async def sse_generator():
                 try:
-                    async for chunk in handler.transcribe_stream(audio_path, params):
+                    async for chunk in handler.transcribe_stream(audio_path, params, task_id):
                         yield chunk
                 finally:
                     cleanup_temp_file(audio_path)
 
-            return StreamingResponse(sse_generator(), media_type="text/event-stream")
+            return StreamingResponse(
+                sse_generator(),
+                media_type="text/event-stream",
+                headers={"X-Task-ID": task_id},
+            )
 
         # Non-streaming
         try:
-            result = await handler.transcribe(audio_path, params)
+            result = await handler.transcribe(audio_path, params, task_id)
             formatted = format_transcription(result, fmt)
         finally:
             cleanup_temp_file(audio_path)
 
         if fmt == ResponseFormat.TEXT:
-            return PlainTextResponse(formatted)
+            return PlainTextResponse(formatted, headers={"X-Task-ID": task_id})
         if fmt in (ResponseFormat.SRT, ResponseFormat.VTT):
-            return PlainTextResponse(formatted, media_type="text/plain")
-        return JSONResponse(content=json.loads(formatted))
+            return PlainTextResponse(formatted, media_type="text/plain", headers={"X-Task-ID": task_id})
+        return JSONResponse(content=json.loads(formatted), headers={"X-Task-ID": task_id})
 
     return router
