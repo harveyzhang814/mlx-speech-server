@@ -25,12 +25,12 @@ class AudioCapable(ABC):
 
     @abstractmethod
     async def transcribe(
-        self, audio_path: Path, params: TranscriptionParams
+        self, audio_path: Path, params: TranscriptionParams, task_id: str
     ) -> TranscriptionResult:
         """Run full transcription and return complete result."""
 
     @abstractmethod
     async def transcribe_stream(
-        self, audio_path: Path, params: TranscriptionParams
+        self, audio_path: Path, params: TranscriptionParams, task_id: str
     ) -> AsyncGenerator[str, None]:
         """Yield SSE-formatted strings, one per segment, ending with 'data: [DONE]\\n\\n'."""

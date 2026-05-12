@@ -43,7 +43,7 @@ async def test_transcribe_returns_result(handler, tmp_wav_file):
     with patch("app.handlers.whisper.mlx_whisper") as mock_mlx:
         mock_mlx.transcribe = MagicMock(return_value=MLX_WHISPER_RESULT)
         params = TranscriptionParams(language="en", temperature=0.0)
-        result = await handler.transcribe(tmp_wav_file, params)
+        result = await handler.transcribe(tmp_wav_file, params, task_id="test-id")
 
     assert isinstance(result, TranscriptionResult)
     assert result.text == " Hello world"
@@ -59,7 +59,7 @@ async def test_transcribe_passes_params_to_mlx_whisper(handler, tmp_wav_file):
     with patch("app.handlers.whisper.mlx_whisper") as mock_mlx:
         mock_mlx.transcribe = MagicMock(return_value=MLX_WHISPER_RESULT)
         params = TranscriptionParams(language="zh", prompt="hint", temperature=0.2)
-        await handler.transcribe(tmp_wav_file, params)
+        await handler.transcribe(tmp_wav_file, params, task_id="test-id")
 
     call_kwargs = mock_mlx.transcribe.call_args[1]
     assert call_kwargs["language"] == "zh"
@@ -73,7 +73,7 @@ async def test_transcribe_stream_yields_sse_segments(handler, tmp_wav_file):
         mock_mlx.transcribe = MagicMock(return_value=MLX_WHISPER_RESULT)
         params = TranscriptionParams()
         chunks = []
-        async for chunk in handler.transcribe_stream(tmp_wav_file, params):
+        async for chunk in handler.transcribe_stream(tmp_wav_file, params, task_id="test-id"):
             chunks.append(chunk)
 
     assert len(chunks) == 2  # 1 segment + [DONE]

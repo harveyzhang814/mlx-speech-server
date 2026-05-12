@@ -38,7 +38,7 @@ class WhisperHandler(BaseHandler, AudioCapable):
         return ModelCard(id=self._model_id)
 
     async def transcribe(
-        self, audio_path: Path, params: TranscriptionParams
+        self, audio_path: Path, params: TranscriptionParams, task_id: str
     ) -> TranscriptionResult:
         def _run() -> dict:
             return mlx_whisper.transcribe(
@@ -49,13 +49,13 @@ class WhisperHandler(BaseHandler, AudioCapable):
                 temperature=params.temperature,
             )
 
-        raw = await self._worker.submit(_run)
+        raw = await self._worker.submit(task_id, _run)
         return _parse_result(raw)
 
     async def transcribe_stream(
-        self, audio_path: Path, params: TranscriptionParams
+        self, audio_path: Path, params: TranscriptionParams, task_id: str
     ) -> AsyncGenerator[str, None]:
-        result = await self.transcribe(audio_path, params)
+        result = await self.transcribe(audio_path, params, task_id)
         for segment in result.segments:
             yield f"data: {json.dumps({'text': segment.text})}\n\n"
         yield "data: [DONE]\n\n"
