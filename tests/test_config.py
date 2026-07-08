@@ -5,7 +5,7 @@ from app.config import ServerConfig
 def test_default_values():
     config = ServerConfig()
     assert config.host == "0.0.0.0"
-    assert config.port == 8000
+    assert config.port == 47300
     assert config.model_path == "mlx-community/whisper-large-v3-turbo"
     assert config.quantize is None
     assert config.memory_cleanup_interval == 20
@@ -37,7 +37,7 @@ def test_from_env_uses_defaults_when_vars_absent(monkeypatch):
     for key in ["WHISPER_PORT", "WHISPER_MODEL_PATH", "WHISPER_QUANTIZE"]:
         monkeypatch.delenv(key, raising=False)
     config = ServerConfig.from_env()
-    assert config.port == 8000
+    assert config.port == 47300
     assert config.model_path == "mlx-community/whisper-large-v3-turbo"
     assert config.quantize is None
 

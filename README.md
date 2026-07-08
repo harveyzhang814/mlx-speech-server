@@ -46,37 +46,37 @@ cd mlx-whisper-server
 
 ### Managed service (recommended)
 
-Install the CLI, then use `mlx-speech-server` subcommands to manage the launchd service (auto-start on login, auto-restart on crash).
+Install the CLI, then use `mlx` subcommands to manage the launchd service (auto-start on login, auto-restart on crash).
 
 **From local clone:**
 ```bash
 git clone https://github.com/your-org/mlx-whisper-server.git
 cd mlx-whisper-server
 pipx install .
-mlx-speech-server install
-mlx-speech-server start
-mlx-speech-server status
+mlx install
+mlx start
+mlx status
 ```
 
 **From PyPI** (once published):
 ```bash
 pip install mlx-speech-server
-mlx-speech-server install
-mlx-speech-server start
+mlx install
+mlx start
 ```
 
 **All service commands:**
 
 | Command | Description |
 | :--- | :--- |
-| `mlx-speech-server install` | Create service venv, install deps, register launchd agent |
-| `mlx-speech-server uninstall` | Remove launchd agent (venv kept) |
-| `mlx-speech-server upgrade` | Local clone: git pull + reinstall if updated; PyPI: pip upgrade |
-| `mlx-speech-server start` | Start service (auto-installs if needed) |
-| `mlx-speech-server stop` | Stop service |
-| `mlx-speech-server restart` | Restart service |
-| `mlx-speech-server status` | Show PID, health check, queue stats |
-| `mlx-speech-server logs` | Show recent log output |
+| `mlx install` | Create service venv, install deps, register launchd agent |
+| `mlx uninstall` | Remove launchd agent (venv kept) |
+| `mlx upgrade` | Local clone: git pull + reinstall if updated; PyPI: pip upgrade |
+| `mlx start` | Start service (auto-installs if needed) |
+| `mlx stop` | Stop service |
+| `mlx restart` | Restart service |
+| `mlx status` | Show PID, health check, queue stats |
+| `mlx logs` | Show recent log output |
 
 Default paths:
 - Service venv: `~/.local/venvs/mlx-speech-server/`
@@ -89,7 +89,7 @@ python3 -m venv ~/.local/venvs/mlx-whisper-server
 source ~/.local/venvs/mlx-whisper-server/bin/activate
 pip install -e "."
 
-# Start with defaults (whisper-large-v3-turbo on port 8000)
+# Start with defaults (whisper-large-v3-turbo on port 47300)
 python main.py
 
 # Custom port and model
@@ -124,8 +124,8 @@ Additional variants: English-only (`.en`), quantized (2/4/8-bit), FP32, language
 ## API Reference
 
 Once running, interactive docs are available at:
-- **Swagger UI**: `http://localhost:8000/docs`
-- **ReDoc**: `http://localhost:8000/redoc`
+- **Swagger UI**: `http://localhost:47300/docs`
+- **ReDoc**: `http://localhost:47300/redoc`
 
 ### Health Check
 
@@ -189,24 +189,24 @@ Every response includes an `X-Task-ID` header containing a UUID that uniquely id
 
 ```bash
 # JSON (default)
-curl http://localhost:8000/v1/audio/transcriptions \
+curl http://localhost:47300/v1/audio/transcriptions \
   -F file=@audio.wav \
   -F model=whisper-large-v3-turbo
 
 # SRT subtitles
-curl http://localhost:8000/v1/audio/transcriptions \
+curl http://localhost:47300/v1/audio/transcriptions \
   -F file=@audio.wav \
   -F model=whisper-large-v3-turbo \
   -F response_format=srt
 
 # Streaming
-curl http://localhost:8000/v1/audio/transcriptions \
+curl http://localhost:47300/v1/audio/transcriptions \
   -F file=@audio.wav \
   -F model=whisper-large-v3-turbo \
   -F stream=true
 
 # With language hint
-curl http://localhost:8000/v1/audio/transcriptions \
+curl http://localhost:47300/v1/audio/transcriptions \
   -F file=@audio.wav \
   -F model=whisper-large-v3-turbo \
   -F language=zh
@@ -312,7 +312,7 @@ Configure via CLI flags or environment variables. CLI flags take priority.
 | CLI Flag | Env Var | Default | Description |
 | :--- | :--- | :--- | :--- |
 | `--host` | `WHISPER_HOST` | `0.0.0.0` | Bind address |
-| `--port` | `WHISPER_PORT` | `8000` | Bind port |
+| `--port` | `WHISPER_PORT` | `47300` | Bind port |
 | `--model-path` | `WHISPER_MODEL_PATH` | `mlx-community/whisper-large-v3-turbo` | HuggingFace repo or local path |
 | `--quantize` | `WHISPER_QUANTIZE` | — | Pre-quantized model bits (`4` or `8`) |
 | `--queue-max-size` | `WHISPER_QUEUE_MAX_SIZE` | `10` | Max queued requests before 503 |
@@ -320,10 +320,10 @@ Configure via CLI flags or environment variables. CLI flags take priority.
 | `--memory-cleanup-interval` | `WHISPER_MEMORY_CLEANUP_INTERVAL` | `20` | Clear Metal cache every N requests |
 | `--log-level` | `WHISPER_LOG_LEVEL` | `info` | Log level (`debug`/`info`/`warning`/`error`) |
 
-Create `~/.config/mlx-speech-server/config.env` (auto-created by `mlx-speech-server install`):
+Create `~/.config/mlx-speech-server/config.env` (auto-created by `mlx install`):
 
 ```bash
-WHISPER_PORT=8000
+WHISPER_PORT=47300
 WHISPER_MODEL_PATH=mlx-community/whisper-large-v3-turbo
 WHISPER_QUEUE_MAX_SIZE=10
 ```
@@ -331,7 +331,7 @@ WHISPER_QUEUE_MAX_SIZE=10
 After editing, restart the service:
 
 ```bash
-mlx-speech-server restart
+mlx restart
 ```
 
 ## Using with OpenAI SDK
@@ -339,7 +339,7 @@ mlx-speech-server restart
 ```python
 from openai import OpenAI
 
-client = OpenAI(base_url="http://localhost:8000/v1", api_key="not-needed")
+client = OpenAI(base_url="http://localhost:47300/v1", api_key="not-needed")
 
 with open("audio.wav", "rb") as f:
     result = client.audio.transcriptions.create(

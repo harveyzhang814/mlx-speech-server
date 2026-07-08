@@ -24,14 +24,14 @@ python main.py
 python main.py --port 9000 --model-path mlx-community/whisper-large-v3-turbo
 
 # macOS service management (launchd)
-mlx-speech-server install    # create venv at ~/.local/venvs/mlx-speech-server, register plist
-mlx-speech-server start      # bootstrap + kickstart; auto-installs if needed
-mlx-speech-server stop
-mlx-speech-server restart
-mlx-speech-server status     # PID, port, /health, /v1/queue/stats
-mlx-speech-server logs       # last 30 lines of stdout/stderr
-mlx-speech-server upgrade    # git pull (local) or pip install --upgrade (PyPI)
-mlx-speech-server uninstall  # removes plist, keeps venv
+mlx install    # create venv at ~/.local/venvs/mlx-speech-server, register plist
+mlx start      # bootstrap + kickstart; auto-installs if needed
+mlx stop
+mlx restart
+mlx status     # PID, port, /health, /v1/queue/stats
+mlx logs       # last 30 lines of stdout/stderr
+mlx upgrade    # git pull (local) or pip install --upgrade (PyPI)
+mlx uninstall  # removes plist, keeps venv
 ```
 
 ## Service Configuration
@@ -39,7 +39,7 @@ mlx-speech-server uninstall  # removes plist, keeps venv
 The launchd service reads config from `~/.config/mlx-speech-server/config.env` (KEY=VALUE format). `app/server.py:run_from_env()` is the entry point — it calls `ServerConfig.from_env()` and starts uvicorn. For dev use `python main.py` with CLI flags instead.
 
 `WHISPER_*` env vars (all optional, match `ServerConfig` fields):
-- `WHISPER_HOST`, `WHISPER_PORT` (default 8000)
+- `WHISPER_HOST`, `WHISPER_PORT` (default 47300)
 - `WHISPER_MODEL_PATH` (default `mlx-community/whisper-large-v3-turbo`)
 - `WHISPER_QUANTIZE` (int, optional)
 - `WHISPER_MEMORY_CLEANUP_INTERVAL` (default 20 requests)
@@ -58,7 +58,7 @@ Request flow: `HTTP → Router → Registry → Handler → Worker → mlx_whisp
 
 **App factory** (`app/server.py`): `create_app(config, registry, worker)` wires routers, exception handlers, health endpoint, and memory cleanup middleware. `run(config)` creates all components and starts uvicorn. Lifespan handles model registration on startup and cleanup on shutdown.
 
-**macOS service** (`app/service.py` + `app/cli.py`): Manages a dedicated venv at `~/.local/venvs/mlx-speech-server` and a launchd plist at `~/Library/LaunchAgents/com.local.mlx-speech-server.plist`. Detects local vs PyPI install via `direct_url.json` metadata — local installs `pip install -e <project_dir>`, PyPI installs `pip install mlx-speech-server`. CLI commands are registered as `mlx-speech-server` and `mlx-speech-server-run` entry points in `pyproject.toml`.
+**macOS service** (`app/service.py` + `app/cli.py`): Manages a dedicated venv at `~/.local/venvs/mlx-speech-server` and a launchd plist at `~/Library/LaunchAgents/com.local.mlx-speech-server.plist`. Detects local vs PyPI install via `direct_url.json` metadata — local installs `pip install -e <project_dir>`, PyPI installs `pip install mlx-speech-server`. CLI commands are registered as `mlx` and `mlx-run` entry points in `pyproject.toml`.
 
 **Schemas** (`app/schemas/`): `audio.py` defines `TranscriptionRequest` (Pydantic, for HTTP layer), `TranscriptionParams` (dataclass, passed to handler), `TranscriptionResult`/`SegmentResult` (dataclass, returned from handler). `common.py` defines `ModelCard` (returned by `model_info()`).
 
@@ -71,3 +71,7 @@ Request flow: `HTTP → Router → Registry → Handler → Worker → mlx_whisp
 - **Testing**: Mock `mlx_whisper` with `patch("app.handlers.whisper.mlx_whisper")`. Use `FakeAudioHandler` (concrete test double) for API tests. `tmp_wav_file` fixture in `conftest.py` creates valid WAV files. pytest `asyncio_mode = "auto"`.
 - **Config precedence**: CLI flags > `WHISPER_*` env vars > dataclass defaults.
 - **Language normalization** (`app/whisper_language.py`): BCP 47 / locale codes are normalized to ISO 639-1 before passing to `mlx_whisper` — `zh-TW` → `zh`, `en-US` → `en`. Validated against `mlx_whisper.tokenizer.LANGUAGES`. `None` / blank = auto-detect. Returns `(code, error_message)` tuple; error is non-`None` only for invalid codes.
+
+## Git 工作流
+
+分支命名规范、保护规则与合并流程详见 [docs/reference/git-workflow.md](docs/reference/git-workflow.md)。
