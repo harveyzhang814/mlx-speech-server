@@ -1,4 +1,5 @@
 """CLI entry point for mlx-speech-server service management."""
+import json
 import subprocess
 import sys
 
@@ -102,8 +103,44 @@ def restart() -> None:
 
 
 @cli.command()
-def status() -> None:
-    """Show process status and health."""
+@click.option(
+    "--port",
+    "port_only",
+    is_flag=True,
+    default=False,
+    help=(
+        "Print the configured port number and exit. "
+        "Outputs a single integer (e.g. 47300) regardless of whether the service "
+        "is running, suitable for machine parsing. "
+        "Falls back to the default port if no config file exists."
+    ),
+)
+@click.option(
+    "--json",
+    "as_json",
+    is_flag=True,
+    default=False,
+    help=(
+        "Print full status as a JSON object and exit. "
+        "Fields: installed, loaded, running, pid, port, health, queue, "
+        "plist_path, venv_dir, log_dir. Path values are serialized as strings. "
+        "Useful for scripting and third-party integrations."
+    ),
+)
+def status(port_only: bool, as_json: bool) -> None:
+    """Show process status, health, and queue stats.
+
+    By default prints a human-readable summary. Use --port or --json for
+    machine-readable output.
+    """
+    if port_only:
+        s = service.get_status()
+        click.echo(s.get("port", service.DEFAULT_PORT))
+        return
+    if as_json:
+        s = service.get_status()
+        click.echo(json.dumps(s, default=str))
+        return
     _print_status()
 
 
