@@ -9,6 +9,7 @@ from app import service
 
 
 @click.group()
+@click.version_option(package_name="mlx-speech-server")
 def cli() -> None:
     """mlx-speech-server: OpenAI-compatible Whisper API on Apple Silicon."""
 
