@@ -1,3 +1,10 @@
+## v0.2.2 — 2026-07-08
+
+### Features
+- Add `mlx --version` flag to show installed package version
+
+---
+
 ## v0.2.1 — 2026-07-08
 
 ### Features
