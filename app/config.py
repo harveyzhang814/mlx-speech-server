@@ -6,7 +6,7 @@ from dataclasses import dataclass
 @dataclass
 class ServerConfig:
     host: str = "0.0.0.0"
-    port: int = 8000
+    port: int = 47300
     model_path: str = "mlx-community/whisper-large-v3-turbo"
     quantize: int | None = None
     memory_cleanup_interval: int = 20
@@ -45,7 +45,7 @@ class ServerConfig:
 
         return cls(
             host=os.environ.get("WHISPER_HOST", "0.0.0.0"),
-            port=_int("WHISPER_PORT", 8000),
+            port=_int("WHISPER_PORT", 47300),
             model_path=os.environ.get(
                 "WHISPER_MODEL_PATH", "mlx-community/whisper-large-v3-turbo"
             ),

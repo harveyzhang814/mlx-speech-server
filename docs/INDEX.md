@@ -7,6 +7,7 @@
 | 文件 | 用途 |
 |------|------|
 | [reference/api.md](reference/api.md) | 完整 HTTP API 文档：所有端点、请求参数、响应结构、错误码、语言码与音频格式 |
+| [reference/git-workflow.md](reference/git-workflow.md) | 分支拓扑、命名规范、提交信息格式与保护规则 |
 
 ## adr/ — 架构决策记录
 
@@ -17,6 +18,7 @@
 | [adr/2026-03-31-cli-subcommands-design.md](adr/2026-03-31-cli-subcommands-design.md) | CLI 子命令（install/start/stop 等）的设计方案与选型依据 |
 | [adr/2026-03-31-mlx-speech-server-design.md](adr/2026-03-31-mlx-speech-server-design.md) | 服务整体架构设计：请求流、worker 模型、handler 抽象 |
 | [adr/2026-04-01-whisper-language-normalization-design.md](adr/2026-04-01-whisper-language-normalization-design.md) | 语言参数规范化设计：BCP 47 → ISO 639-1，400 错误处理 |
+| [adr/2026-05-29-whisper-hallucination-prevention.md](adr/2026-05-29-whisper-hallucination-prevention.md) | 幻觉防护：temperature fallback 序列与 condition_on_previous_text=False 的设计依据 |
 
 ## archive/ — 历史归档
 

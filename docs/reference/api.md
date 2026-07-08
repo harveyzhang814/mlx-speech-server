@@ -1,6 +1,6 @@
 # API Reference
 
-**Base URL:** `http://localhost:8000` (default; configurable via `WHISPER_HOST` / `WHISPER_PORT`)
+**Base URL:** `http://localhost:47300` (default; configurable via `WHISPER_HOST` / `WHISPER_PORT`)
 
 **OpenAI compatibility:** The transcription and models endpoints follow the OpenAI API schema. Clients written for OpenAI's `/v1/audio/transcriptions` and `/v1/models` work without modification.
 
