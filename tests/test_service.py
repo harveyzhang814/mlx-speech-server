@@ -91,7 +91,7 @@ def test_build_plist_contains_service_label():
 
 def test_build_plist_contains_runner_script():
     plist = service._build_plist({})
-    assert str(service.VENV_DIR / "bin/mlx-speech-server-run") in plist
+    assert str(service.VENV_DIR / "bin/mlx-run") in plist
 
 
 def test_build_plist_injects_env_vars():
