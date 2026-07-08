@@ -2,11 +2,13 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
+DEFAULT_PORT = 47300
+
 
 @dataclass
 class ServerConfig:
     host: str = "0.0.0.0"
-    port: int = 47300
+    port: int = DEFAULT_PORT
     model_path: str = "mlx-community/whisper-large-v3-turbo"
     quantize: int | None = None
     memory_cleanup_interval: int = 20
@@ -45,7 +47,7 @@ class ServerConfig:
 
         return cls(
             host=os.environ.get("WHISPER_HOST", "0.0.0.0"),
-            port=_int("WHISPER_PORT", 47300),
+            port=_int("WHISPER_PORT", DEFAULT_PORT),
             model_path=os.environ.get(
                 "WHISPER_MODEL_PATH", "mlx-community/whisper-large-v3-turbo"
             ),

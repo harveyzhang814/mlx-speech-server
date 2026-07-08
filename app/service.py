@@ -9,6 +9,8 @@ import urllib.request
 import xml.sax.saxutils
 from pathlib import Path
 
+from app.config import DEFAULT_PORT
+
 SERVICE_LABEL = "com.local.mlx-speech-server"
 CONFIG_DIR = Path.home() / ".config/mlx-speech-server"
 CONFIG_ENV = CONFIG_DIR / "config.env"
@@ -96,7 +98,7 @@ def _build_plist(env_vars: dict[str, str]) -> str:
         f"        <key>{xml.sax.saxutils.escape(k)}</key>\n        <string>{xml.sax.saxutils.escape(v)}</string>\n"
         for k, v in env_vars.items()
     )
-    runner = VENV_DIR / "bin/mlx-speech-server-run"
+    runner = VENV_DIR / "bin/mlx-run"
     path = f"{VENV_DIR}/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
     return f"""<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -156,6 +158,7 @@ def _launchctl_bootout() -> None:
     subprocess.run(
         ["launchctl", "bootout", f"gui/{uid}/{SERVICE_LABEL}"],
         check=False,
+        capture_output=True,
     )
 
 
@@ -164,6 +167,7 @@ def _launchctl_bootstrap() -> None:
     subprocess.run(
         ["launchctl", "bootstrap", f"gui/{uid}", str(PLIST_PATH)],
         check=False,
+        capture_output=True,
     )
 
 
@@ -196,6 +200,7 @@ def start() -> None:
     if not is_installed():
         install()
     LOG_DIR.mkdir(parents=True, exist_ok=True)
+    _launchctl_bootout()  # ensure clean state before bootstrap
     _launchctl_bootstrap()
     _launchctl_kickstart()
 
@@ -234,7 +239,7 @@ def get_status() -> dict:
             break
 
     env_vars = _read_env()
-    port = int(env_vars.get("WHISPER_PORT", 8000))
+    port = int(env_vars.get("WHISPER_PORT", DEFAULT_PORT))
 
     health = None
     queue = None
