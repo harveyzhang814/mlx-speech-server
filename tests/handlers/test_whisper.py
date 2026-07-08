@@ -196,6 +196,37 @@ async def test_watcher_cancelled_on_cleanup(worker):
 
 
 @pytest.mark.asyncio
+async def test_idle_watcher_skips_when_queued(worker):
+    worker._count = 1  # simulate a request queued but not yet active (queue_size > 0)
+
+    with patch("app.handlers.whisper._IDLE_TIMEOUT", 0.0), \
+         patch("app.handlers.whisper._WATCH_INTERVAL", 0.001):
+        handler = WhisperHandler(model_path="mlx-community/whisper-large-v3-turbo", worker=worker)
+        with patch.object(handler, "_unload") as mock_unload:
+            await handler.initialize()
+            handler._last_used = 0.0
+            await asyncio.sleep(0.05)
+            await handler.cleanup()
+
+    mock_unload.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_unload_skips_when_model_already_none(worker):
+    import sys
+    import mlx_whisper.transcribe  # noqa: F401
+    _mlx_t = sys.modules["mlx_whisper.transcribe"]
+    _mlx_t.ModelHolder.model = None  # already unloaded
+
+    with patch("app.handlers.whisper.mx") as mock_mx, \
+         patch("app.handlers.whisper.gc"):
+        handler = WhisperHandler(model_path="mlx-community/whisper-large-v3-turbo", worker=worker)
+        handler._unload()
+
+    mock_mx.clear_cache.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_initial_last_used_prevents_early_unload(worker):
     with patch("app.handlers.whisper._IDLE_TIMEOUT", 1800.0), \
          patch("app.handlers.whisper._WATCH_INTERVAL", 0.001):

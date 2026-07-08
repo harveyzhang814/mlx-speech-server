@@ -106,7 +106,7 @@ class WhisperHandler(BaseHandler, AudioCapable):
         _t.ModelHolder.model = None
         mx.clear_cache()
         gc.collect()
-        logger.info("Model unloaded after 30min idle")
+        logger.info(f"Model unloaded after {_IDLE_TIMEOUT / 60:.0f}min idle")
 
 
 def _parse_result(raw: dict) -> TranscriptionResult:
