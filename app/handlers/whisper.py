@@ -90,7 +90,7 @@ class WhisperHandler(BaseHandler, AudioCapable):
             while True:
                 await asyncio.sleep(_WATCH_INTERVAL)
                 idle = time.time() - self._last_used
-                if idle > _IDLE_TIMEOUT and not self._worker.active:
+                if idle > _IDLE_TIMEOUT and not self._worker.active and self._worker.queue_size == 0:
                     self._unload()
                 else:
                     logger.debug(f"Idle watcher: {idle / 60:.1f} min since last request, skipping")
@@ -101,6 +101,8 @@ class WhisperHandler(BaseHandler, AudioCapable):
         import sys
         import mlx_whisper.transcribe  # noqa: F401 — side-effect: loads module into sys.modules
         _t = sys.modules["mlx_whisper.transcribe"]
+        if _t.ModelHolder.model is None:
+            return
         _t.ModelHolder.model = None
         mx.clear_cache()
         gc.collect()
