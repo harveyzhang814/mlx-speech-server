@@ -1,0 +1,99 @@
+# workflow-config.yml
+# Git 工作流配置文件 — 由 /git-workflow-init skill 读取、审核并部署
+#
+# 使用方式：将此文件复制到项目根目录，按需修改后运行 /git-workflow-init
+#
+# 每个节对应一个 git hook，注释掉整节 = 不安装该 hook
+
+# ── 元信息 ────────────────────────────────────────────────────────────────────
+meta:
+  name: "my-project-workflow"
+  version: "1.0.0"
+  # preset 决定各节的默认值，可在下方局部覆盖
+  # 可选值：gitflow | github-flow | trunk-based | custom
+  preset: gitflow
+
+# ── 分支拓扑与保护（生成 pre-commit hook）────────────────────────────────────
+#
+# allow_direct_commit: false → 直接提交时 exit 1（硬拦截）
+# allow_direct_commit: true  → 直接提交时仅打印警告，不阻断
+# merge_from 使用 shell glob 语法（* 匹配任意字符，不含 /）
+branches:
+  protected:
+    - name: main
+      allow_direct_commit: false
+      merge_from:
+        - staging
+        - "release/*"
+
+    - name: staging
+      allow_direct_commit: false
+      merge_from:
+        - "feature/*"
+        - "fix/*"
+        - "chore/*"
+        - "doc/*"
+
+# ── 分支命名规范（生成 post-checkout hook）───────────────────────────────────
+#
+# enforce: true  → 切换到不合规分支时打印警告（advisory，不阻断）
+# enforce: false → 跳过，不安装此 hook
+# allowed_patterns 使用 POSIX ERE 语法
+branch_naming:
+  enforce: true
+  allowed_patterns:
+    - "^feature/.+"
+    - "^fix/.+"
+    - "^chore/.+"
+    - "^doc/.+"
+    - "^release/[0-9]+\\.[0-9]+\\.[0-9]+(-.+)?$"
+  exempt:                      # 永远豁免命名检查的分支
+    - main
+    - staging
+
+# ── 提交信息格式（生成 commit-msg hook）──────────────────────────────────────
+#
+# format 可选值：
+#   conventional → 使用下方 conventional 节的设置
+#   regex        → 使用自定义 pattern 字段（需同时填写 pattern）
+#   none         → 不检查格式（但若 enforce: true 会安装空 hook）
+commit_message:
+  enforce: true
+  format: conventional
+  # format: regex 时启用此行：
+  # pattern: "^(JIRA-\\d+|NOJIRA): .{1,80}"
+  conventional:
+    types:
+      - feat
+      - fix
+      - chore
+      - docs
+      - refactor
+      - test
+      - style
+      - perf
+    require_scope: false         # true = feat(scope): msg 中 scope 必填
+    max_subject_length: 80
+
+# ── Tag 命名规范（生成 pre-push hook 的 tag 段）───────────────────────────────
+#
+# push_guard: true → 推送不合规 tag 时 exit 1
+# allowed_patterns 使用 POSIX ERE 语法，满足其中一个即通过
+# require_annotated: true → 强制使用 git tag -a，拒绝 lightweight tag
+tags:
+  enforce: true
+  push_guard: true
+  allowed_patterns:
+    - "^v[0-9]+\\.[0-9]+\\.[0-9]+$"           # 正式版：v1.2.3
+    - "^v[0-9]+\\.[0-9]+\\.[0-9]+-.+$"         # 预发布：v1.2.3-beta.1、v1.2.3-rc.2
+  require_annotated: true
+
+# ── 推送限制（生成 pre-push hook 的分支段）───────────────────────────────────
+#
+# block_force_push 列出的分支，force push 时 exit 1
+# enforce: false 时整节跳过，不安装 pre-push hook（除非 tags 节已启用）
+push_rules:
+  enforce: true
+  block_force_push:
+    - main
+    - staging
