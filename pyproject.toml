@@ -15,11 +15,12 @@ dependencies = [
     "python-multipart",
     "click>=8.0",
     "loguru>=0.7",
+    "setproctitle>=1.3",
 ]
 
 [project.scripts]
-mlx-speech-server = "app.cli:cli"
-mlx-speech-server-run = "app.server:run_from_env"
+mlx = "app.cli:cli"
+mlx-run = "app.server:run_from_env"
 
 [project.optional-dependencies]
 dev = [
@@ -32,6 +33,8 @@ dev = [
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+markers = ["e2e: end-to-end tests — run explicitly with: pytest tests/e2e/ -v -s"]
+addopts = "-m 'not e2e'"
 
 [tool.ruff]
 line-length = 100
