@@ -46,37 +46,37 @@ cd mlx-whisper-server
 
 ### 一键部署（推荐）
 
-安装 CLI 后，使用 `mlx-speech-server` 子命令管理 launchd 服务（登录自启、崩溃自动重启）。
+安装 CLI 后，使用 `mlx` 子命令管理 launchd 服务（登录自启、崩溃自动重启）。
 
 **本地 clone 安装：**
 ```bash
 git clone https://github.com/your-org/mlx-whisper-server.git
 cd mlx-whisper-server
 pipx install .
-mlx-speech-server install
-mlx-speech-server start
-mlx-speech-server status
+mlx install
+mlx start
+mlx status
 ```
 
 **PyPI 安装**（发布后可用）：
 ```bash
 pip install mlx-speech-server
-mlx-speech-server install
-mlx-speech-server start
+mlx install
+mlx start
 ```
 
 **完整服务管理命令：**
 
 | 命令 | 说明 |
 | :--- | :--- |
-| `mlx-speech-server install` | 创建服务虚拟环境、安装依赖、注册 launchd 服务 |
-| `mlx-speech-server uninstall` | 卸载 launchd 服务（虚拟环境保留） |
-| `mlx-speech-server upgrade` | 本地 clone：git pull + 有更新时重装；PyPI：pip upgrade |
-| `mlx-speech-server start` | 启动服务（未安装时自动安装） |
-| `mlx-speech-server stop` | 停止服务 |
-| `mlx-speech-server restart` | 重启服务 |
-| `mlx-speech-server status` | 查看状态（含健康检查） |
-| `mlx-speech-server logs` | 查看日志 |
+| `mlx install` | 创建服务虚拟环境、安装依赖、注册 launchd 服务 |
+| `mlx uninstall` | 卸载 launchd 服务（虚拟环境保留） |
+| `mlx upgrade` | 本地 clone：git pull + 有更新时重装；PyPI：pip upgrade |
+| `mlx start` | 启动服务（未安装时自动安装） |
+| `mlx stop` | 停止服务 |
+| `mlx restart` | 重启服务 |
+| `mlx status` | 查看状态（含健康检查） |
+| `mlx logs` | 查看日志 |
 
 默认路径：
 - 服务虚拟环境：`~/.local/venvs/mlx-speech-server/`
@@ -89,7 +89,7 @@ python3 -m venv ~/.local/venvs/mlx-whisper-server
 source ~/.local/venvs/mlx-whisper-server/bin/activate
 pip install -e "."
 
-# 默认启动（whisper-large-v3-turbo，端口 8000）
+# 默认启动（whisper-large-v3-turbo，端口 47300）
 python main.py
 
 # 自定义端口和模型
@@ -124,8 +124,8 @@ python main.py --model-path mlx-community/whisper-large-v3-turbo-q4
 ## API 文档
 
 服务启动后，可通过浏览器访问交互式 API 文档：
-- **Swagger UI**：`http://localhost:8000/docs`
-- **ReDoc**：`http://localhost:8000/redoc`
+- **Swagger UI**：`http://localhost:47300/docs`
+- **ReDoc**：`http://localhost:47300/redoc`
 
 ### 健康检查
 
@@ -189,24 +189,24 @@ Content-Type: multipart/form-data
 
 ```bash
 # JSON（默认）
-curl http://localhost:8000/v1/audio/transcriptions \
+curl http://localhost:47300/v1/audio/transcriptions \
   -F file=@audio.wav \
   -F model=whisper-large-v3-turbo
 
 # SRT 字幕
-curl http://localhost:8000/v1/audio/transcriptions \
+curl http://localhost:47300/v1/audio/transcriptions \
   -F file=@audio.wav \
   -F model=whisper-large-v3-turbo \
   -F response_format=srt
 
 # 流式输出
-curl http://localhost:8000/v1/audio/transcriptions \
+curl http://localhost:47300/v1/audio/transcriptions \
   -F file=@audio.wav \
   -F model=whisper-large-v3-turbo \
   -F stream=true
 
 # 指定语言
-curl http://localhost:8000/v1/audio/transcriptions \
+curl http://localhost:47300/v1/audio/transcriptions \
   -F file=@audio.wav \
   -F model=whisper-large-v3-turbo \
   -F language=zh
@@ -312,7 +312,7 @@ Content-Type: application/json
 | CLI 参数 | 环境变量 | 默认值 | 说明 |
 | :--- | :--- | :--- | :--- |
 | `--host` | `WHISPER_HOST` | `0.0.0.0` | 监听地址 |
-| `--port` | `WHISPER_PORT` | `8000` | 监听端口 |
+| `--port` | `WHISPER_PORT` | `47300` | 监听端口 |
 | `--model-path` | `WHISPER_MODEL_PATH` | `mlx-community/whisper-large-v3-turbo` | HuggingFace 仓库或本地路径 |
 | `--quantize` | `WHISPER_QUANTIZE` | — | 量化位数（`4` 或 `8`） |
 | `--queue-max-size` | `WHISPER_QUEUE_MAX_SIZE` | `10` | 最大排队请求数，超出返回 503 |
@@ -320,10 +320,10 @@ Content-Type: application/json
 | `--memory-cleanup-interval` | `WHISPER_MEMORY_CLEANUP_INTERVAL` | `20` | 每 N 次请求清理一次 Metal 缓存 |
 | `--log-level` | `WHISPER_LOG_LEVEL` | `info` | 日志级别（`debug`/`info`/`warning`/`error`） |
 
-创建 `~/.config/mlx-speech-server/config.env`（`mlx-speech-server install` 时自动创建）：
+创建 `~/.config/mlx-speech-server/config.env`（`mlx install` 时自动创建）：
 
 ```bash
-WHISPER_PORT=8000
+WHISPER_PORT=47300
 WHISPER_MODEL_PATH=mlx-community/whisper-large-v3-turbo
 WHISPER_QUEUE_MAX_SIZE=10
 ```
@@ -331,7 +331,7 @@ WHISPER_QUEUE_MAX_SIZE=10
 修改后重启服务即可生效：
 
 ```bash
-mlx-speech-server restart
+mlx restart
 ```
 
 ## 使用 OpenAI SDK 调用
@@ -339,7 +339,7 @@ mlx-speech-server restart
 ```python
 from openai import OpenAI
 
-client = OpenAI(base_url="http://localhost:8000/v1", api_key="not-needed")
+client = OpenAI(base_url="http://localhost:47300/v1", api_key="not-needed")
 
 with open("audio.wav", "rb") as f:
     result = client.audio.transcriptions.create(

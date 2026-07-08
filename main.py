@@ -1,11 +1,12 @@
 import click
+import setproctitle
 from app.config import ServerConfig
 from app.server import run
 
 
 @click.command()
 @click.option("--host", default=None, help="Bind host (default: 0.0.0.0)")
-@click.option("--port", default=None, type=int, help="Bind port (default: 8000)")
+@click.option("--port", default=None, type=int, help="Bind port (default: 47300)")
 @click.option("--model-path", default=None, help="HuggingFace repo or local path for the Whisper model")
 @click.option("--quantize", default=None, type=click.Choice(["4", "8"]), help="Quantization bits (use a pre-quantized model path)")
 @click.option("--queue-max-size", default=None, type=int, help="Max concurrent+waiting requests (default: 10)")
@@ -14,6 +15,7 @@ from app.server import run
 @click.option("--log-level", default=None, type=click.Choice(["debug", "info", "warning", "error"]))
 def cli(host, port, model_path, quantize, queue_max_size, queue_timeout, memory_cleanup_interval, log_level):
     """mlx-speech-server: OpenAI-compatible Whisper API on Apple Silicon."""
+    setproctitle.setproctitle("mlx")
     config = ServerConfig.from_env()
 
     # CLI args override env vars
