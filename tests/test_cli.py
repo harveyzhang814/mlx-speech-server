@@ -206,3 +206,17 @@ def test_ensure_running_can_register_locked_current_runtime():
         result = CliRunner().invoke(cli, ["ensure-running", "--json", "--use-current-runtime"])
     assert result.exit_code == 0
     ensure.assert_called_once_with(model=None, port=None, use_current_runtime=True)
+
+
+def test_install_json_preserves_bounded_subprocess_diagnostic():
+    import json
+    failure = subprocess.CalledProcessError(1, ["pip", "hidden-argument"],
+        output="stdout context", stderr="ERROR: No space left on device\n" + "x" * 10000)
+    with patch("app.cli.service.install", side_effect=failure):
+        result = CliRunner().invoke(cli, ["install", "--json"])
+    error = json.loads(result.output)["error"]
+    assert result.exit_code == 1 and error["code"] == "install_failed"
+    assert "No space left on device" in error["message"]
+    assert "stdout context" in error["message"] and "exit status 1" in error["message"]
+    assert "hidden-argument" not in error["message"]
+    assert len(error["message"]) <= 2200

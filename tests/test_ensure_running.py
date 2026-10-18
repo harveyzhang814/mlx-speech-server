@@ -216,3 +216,23 @@ def test_listener_appearing_during_install_blocks_launch(monkeypatch):
     result = service.ensure_running()
     assert result["error"]["code"] == "port_in_use"
     service.subprocess.run.assert_not_called()
+
+
+@pytest.mark.parametrize("installed,code", [(False, "install_failed"), (True, "startup_failed")])
+def test_subprocess_failure_keeps_sanitized_diagnostics(monkeypatch, installed, code):
+    monkeypatch.setattr(service, "get_status", lambda: status(False) if installed else {"installed": False})
+    failure = subprocess.CalledProcessError(28, ["pip", "--password", "command-secret"],
+        output="download failed", stderr="ERROR: No space left on device\nhttps://user:password@example.test/x?token=secret\nAPI_TOKEN=private-value\n\x1b[31mfailed\x1b[0m")
+    if installed:
+        service.subprocess.run.side_effect = failure
+    else:
+        monkeypatch.setattr(service, "install", MagicMock(side_effect=failure))
+    result = service.ensure_running()
+    assert result["error"]["code"] == code
+    message = result["error"]["message"]
+    assert "No space left on device" in message
+    assert "28" in message and "download failed" in message
+    for secret in ("command-secret", "password", "private-value", "token=secret", "\x1b"):
+        assert secret not in message
+    if not installed:
+        service.subprocess.run.assert_not_called()

@@ -645,3 +645,27 @@ def test_current_runtime_plist_supports_xml_path_characters(fake_paths, monkeypa
     monkeypatch.setattr(service.sys, "executable", str(runner.parent / "python"))
     service.install(use_current_runtime=True)
     assert plistlib.loads(service.PLIST_PATH.read_bytes())["ProgramArguments"] == [str(runner)]
+
+
+@pytest.mark.parametrize("host,connect,url_host", [
+    ("127.0.0.2", "127.0.0.2", "127.0.0.2"),
+    ("0.0.0.0", "127.0.0.1", "127.0.0.1"),
+    ("::", "::1", "[::1]"),
+    ("::1", "::1", "[::1]"),
+    ("[::1]", "::1", "[::1]"),
+])
+def test_probes_use_configured_connect_host(installed, host, connect, url_host):
+    service.CONFIG_ENV.parent.mkdir(parents=True)
+    content = f"WHISPER_HOST={host}\nWHISPER_PORT=49000\n"
+    service.CONFIG_ENV.write_text(content)
+    response = MagicMock()
+    response.__enter__.return_value.read.return_value = b'{"status":"ok"}'
+    with patch.object(service.socket, "create_connection") as tcp, \
+         patch.object(service.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, "pid = 321")), \
+         patch.object(service.urllib.request, "urlopen", return_value=response) as http:
+        assert service._port_in_use(49000)
+        assert service.get_status()["health"] == {"status": "ok"}
+    tcp.assert_called_once_with((connect, 49000), timeout=0.5)
+    assert [call.args[0] for call in http.call_args_list] == [
+        f"http://{url_host}:49000/health", f"http://{url_host}:49000/v1/queue/stats"]
+    assert service.CONFIG_ENV.read_text() == content

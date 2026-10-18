@@ -31,9 +31,9 @@ def install(as_json: bool, model: str | None, port: int | None,
         service.install(**kwargs)
     except Exception as e:
         if as_json:
-            click.echo(json.dumps({"installed": False, "error": {"code": "install_failed", "message": str(e)}}))
+            click.echo(json.dumps({"installed": False, "error": {"code": "install_failed", "message": service.error_message(e)}}))
         else:
-            click.echo(f"Install failed: {e}")
+            click.echo(f"Install failed: {service.error_message(e)}")
         sys.exit(1)
     if as_json:
         click.echo(json.dumps({"installed": True, "config": str(service.CONFIG_ENV),

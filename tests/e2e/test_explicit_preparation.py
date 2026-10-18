@@ -254,9 +254,12 @@ def test_real_loading_timeout_keeps_native_worker_active(tmp_path, local_model):
         observed_active_after_timeout = False
         while time.monotonic() < deadline:
             observed = client.get("/__e2e/observations").json()
-            if observed["timeouts"] and observed["native_finished"] is None:
-                queue = client.get("/v1/queue/stats").json()
-                assert queue["active"] is True and queue["active_status"] == "cancelling"
+            if observed["timeouts"]:
+                # This record is captured inside the timeout handler in one event-loop turn.
+                # A second HTTP request may legitimately arrive after native completion.
+                timeout = observed["timeouts"][0]
+                assert timeout["active"] is True and timeout["active_status"] == "cancelling"
+                assert timeout["native_finished"] is None
                 observed_active_after_timeout = True
                 repeat = client.post(f"{path}/prepare")
                 assert repeat.json()["operation_id"] == operation
@@ -269,6 +272,7 @@ def test_real_loading_timeout_keeps_native_worker_active(tmp_path, local_model):
         observed = client.get("/__e2e/observations").json()
         timeout = observed["timeouts"][0]
         assert timeout["active"] is True and timeout["native_finished"] is None
+        assert timeout["active_status"] == "cancelling"
         assert observed["native_finished"] > timeout["at"]
         assert observed["weight_loads"] == 1
         deadline = time.monotonic() + 5

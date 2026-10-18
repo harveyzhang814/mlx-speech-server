@@ -3,6 +3,7 @@ import fcntl
 import importlib.metadata
 import json
 import os
+import re
 import socket
 import subprocess
 import sys
@@ -24,6 +25,34 @@ LOG_DIR = Path.home() / ".local/logs/mlx-speech-server"
 PLIST_PATH = Path.home() / "Library/LaunchAgents" / f"{SERVICE_LABEL}.plist"
 STDOUT_LOG = LOG_DIR / "server.log"
 STDERR_LOG = LOG_DIR / "server.err"
+
+
+def error_message(error: Exception) -> str:
+    """Bound subprocess diagnostics without disclosing its command or credentials."""
+    def sanitize(value: str | bytes | None) -> str:
+        if isinstance(value, bytes):
+            value = value.decode("utf-8", errors="replace")
+        value = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", value or "")
+        value = re.sub(r"https?://\S+", "[redacted URL]", value)
+        value = re.sub(r"(?i)(authorization\s*[:=]\s*)[^\r\n]+", r"\1[redacted]", value)
+        value = re.sub(r"(?i)([\w-]*(?:token|password|secret|api[_-]?key)[\w-]*\s*[:=]\s*)[^\s]+",
+                       r"\1[redacted]", value)
+        value = "".join(c for c in value if c in "\n\t" or c.isprintable())
+        return value[:1000].strip()
+
+    if isinstance(error, subprocess.CalledProcessError):
+        parts = [f"Subprocess failed with exit status {error.returncode}."]
+        for label, value in (("stderr", error.stderr), ("stdout", error.stdout)):
+            detail = sanitize(value)
+            if detail:
+                parts.append(f"{label}: {detail}")
+        return "\n".join(parts)
+    return sanitize(str(error))
+
+
+def _connect_host(env: dict[str, str]) -> str:
+    host = env.get("WHISPER_HOST", "127.0.0.1").strip("[]")
+    return {"0.0.0.0": "127.0.0.1", "::": "::1"}.get(host, host)
 
 
 def _require_darwin() -> None:
@@ -193,8 +222,7 @@ def _validate_first_config(model: str | None, port: int | None) -> None:
 
 def _port_in_use(port: int) -> bool:
     """Detect a TCP listener even if it does not implement HTTP or /health."""
-    host = _read_env().get("WHISPER_HOST", "127.0.0.1")
-    host = {"0.0.0.0": "127.0.0.1", "::": "::1"}.get(host, host)
+    host = _connect_host(_read_env())
     try:
         with socket.create_connection((host, port), timeout=0.5):
             return True
@@ -240,7 +268,10 @@ def ensure_running(*, model: str | None = None, port: int | None = None,
                 kwargs = {"model": model, "port": port}
                 if use_current_runtime:
                     kwargs["use_current_runtime"] = True
-                install(**kwargs)
+                try:
+                    install(**kwargs)
+                except Exception as exc:
+                    return fail("install_failed", error_message(exc))
                 if _port_in_use(configured_port):
                     return fail("port_in_use", f"Another listener owns port {configured_port}; left untouched.")
             LOG_DIR.mkdir(parents=True, exist_ok=True)
@@ -264,7 +295,7 @@ def ensure_running(*, model: str | None = None, port: int | None = None,
                     return fail("startup_timeout", "Service did not become healthy before the startup deadline.")
                 time.sleep(0.1)
     except Exception as exc:
-        return fail("startup_failed", str(exc))
+        return fail("startup_failed", error_message(exc))
 
 
 def _launchctl_bootout() -> None:
@@ -355,12 +386,14 @@ def get_status() -> dict:
     env_vars = _read_env()
     port = int(env_vars.get("WHISPER_PORT", DEFAULT_PORT))
 
+    host = _connect_host(env_vars)
+    url_host = f"[{host}]" if ":" in host else host
     health = None
     queue = None
     if pid:
         for url, key in [
-            (f"http://localhost:{port}/health", "health"),
-            (f"http://localhost:{port}/v1/queue/stats", "queue"),
+            (f"http://{url_host}:{port}/health", "health"),
+            (f"http://{url_host}:{port}/v1/queue/stats", "queue"),
         ]:
             try:
                 with urllib.request.urlopen(url, timeout=2) as resp:
