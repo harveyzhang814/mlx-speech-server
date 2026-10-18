@@ -230,3 +230,67 @@ async def test_admission_errors_remain_distinct_from_load_errors(code):
         finally:
             busy_release.set()
             await busy
+
+
+async def test_background_failure_recovers_after_audio_inference(tmp_wav_file):
+    async with preparation_client() as (client, handler, holder, entered, release, calls):
+
+        async def broken_prepare():
+            raise RuntimeError("unexpected preparation error")
+
+        with patch.object(handler, "prepare", broken_prepare):
+            assert (await client.post("/v1/models/model/prepare")).status_code == 202
+            assert (await poll_terminal(client))["phase"] == "failed"
+
+        def transcribe(*args, **kwargs):
+            holder.get_model("configured/model", mx.float16)
+            return {"text": "recovered", "language": "en", "segments": []}
+
+        with patch("app.handlers.whisper.mlx_whisper.transcribe", side_effect=transcribe):
+            response = await client.post(
+                "/v1/audio/transcriptions",
+                data={"model": "model"},
+                files={"file": ("audio.wav", tmp_wav_file.read_bytes(), "audio/wav")},
+            )
+        assert response.status_code == 200
+        assert response.json() == {"text": "recovered"}
+        assert holder.model is not None
+        status = (await client.get("/v1/models/model/preparation")).json()
+        assert status["phase"] == "ready"
+        assert status["loaded"] is True
+        assert status["error"] is None
+        assert (await client.post("/v1/models/model/prepare")).status_code == 200
+
+
+async def test_background_failure_does_not_mask_new_handler_operation():
+    async with preparation_client(blocked=True) as (
+        client,
+        handler,
+        holder,
+        entered,
+        release,
+        calls,
+    ):
+
+        async def broken_prepare():
+            raise RuntimeError("unexpected preparation error")
+
+        with patch.object(handler, "prepare", broken_prepare):
+            assert (await client.post("/v1/models/model/prepare")).status_code == 202
+            failed = await poll_terminal(client)
+            assert failed["phase"] == "failed"
+
+        # An independent handler consumer starts a new operation without another
+        # API POST clearing the router's background failure.
+        preparing = asyncio.create_task(handler.prepare())
+        try:
+            assert await asyncio.to_thread(entered.wait, 1)
+            status = (await client.get("/v1/models/model/preparation")).json()
+            assert status["phase"] == "loading"
+            assert status["loaded"] is False
+            assert status["error"] is None
+            assert status["operation_id"] != failed["operation_id"]
+        finally:
+            release.set()
+            await preparing
+        assert (await poll_terminal(client))["phase"] == "ready"
