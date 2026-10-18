@@ -174,3 +174,47 @@ async def test_repeated_ready_prepare_reuses_evaluated_weights(preparation):
         again = await handler.prepare()
     assert again == ready
     assert len(calls) == 1
+
+
+@pytest.mark.parametrize("admission", ["queue_full", "queue_timeout"])
+@pytest.mark.parametrize("already_ready", [False, True])
+async def test_prepare_admission_failure_preserves_model_state(
+    preparation, admission, already_ready
+):
+    from pathlib import Path
+    from app.schemas.audio import TranscriptionParams
+
+    handler, holder = preparation
+    if already_ready:
+        with install_loader(holder, []):
+            await handler.prepare()
+    before = handler.preparation_status()
+    loaded_model = holder.model
+    entered, release = Event(), Event()
+
+    def transcribe(*args, **kwargs):
+        entered.set()
+        assert release.wait(2)
+        return {"text": "done", "language": "en", "segments": []}
+
+    with patch("app.handlers.whisper.mlx_whisper.transcribe", side_effect=transcribe):
+        busy = asyncio.create_task(
+            handler.transcribe(Path("not-read.wav"), TranscriptionParams(), "busy")
+        )
+        try:
+            assert await asyncio.to_thread(entered.wait, 1)
+            handler._worker._max_size = 1 if admission == "queue_full" else 2
+            handler._worker._timeout = 0.02
+            result = await handler.prepare()
+            assert holder.model is loaded_model
+            if already_ready:
+                assert result == before
+                assert handler.preparation_status() == before
+            else:
+                assert result.phase == "failed"
+                assert result.loaded is False
+                assert result.error.code == admission
+                assert result.error.message
+        finally:
+            release.set()
+            await busy

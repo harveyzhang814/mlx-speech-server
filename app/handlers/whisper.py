@@ -19,7 +19,7 @@ from app.schemas.audio import (
     SegmentResult,
 )
 from app.schemas.common import ModelCard
-from app.worker import InferenceWorker, QueueTimeoutError, TaskCancelledError
+from app.worker import InferenceWorker, QueueFullError, QueueTimeoutError, TaskCancelledError
 from app.preparation import PreparationError, PreparationSnapshot, WhisperModelAdapter
 
 _IDLE_TIMEOUT = 1800.0   # 30 minutes
@@ -91,14 +91,26 @@ class WhisperHandler(BaseHandler, AudioCapable):
                 # The request deadline cannot cancel native loading or open a
                 # second preparation operation while the first still runs.
                 return await asyncio.shield(completed)
-            return self._preparation_failed(exc)
+            return self._preparation_scheduling_failed(exc, "queue_timeout")
+        except QueueFullError as exc:
+            return self._preparation_scheduling_failed(exc, "queue_full")
         except Exception as exc:
             return self._preparation_failed(exc)
 
-    def _preparation_failed(self, exc: Exception) -> PreparationSnapshot:
+    def _preparation_scheduling_failed(
+        self, exc: Exception, code: str
+    ) -> PreparationSnapshot:
+        # No model operation began: admission cannot invalidate evaluated weights.
+        if self._preparation.loaded:
+            return self._preparation
+        return self._preparation_failed(exc, code=code)
+
+    def _preparation_failed(
+        self, exc: Exception, code: str = "model_load_failed"
+    ) -> PreparationSnapshot:
         self._preparation = replace(
             self._preparation, phase="failed", loaded=False,
-            error=PreparationError(code="model_load_failed", message=str(exc)),
+            error=PreparationError(code=code, message=str(exc)),
         )
         return self._preparation
 
