@@ -294,3 +294,10 @@ async def test_background_failure_does_not_mask_new_handler_operation():
             release.set()
             await preparing
         assert (await poll_terminal(client))["phase"] == "ready"
+
+
+async def test_capabilities_publish_actual_configured_path():
+    async with preparation_client() as (client, *_):
+        caps = (await client.get("/v1/preparation/capabilities")).json()
+        assert caps["configured_model_id"] == "model"
+        assert caps["configured_model_path"] == "configured/model"

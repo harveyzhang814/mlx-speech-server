@@ -16,13 +16,18 @@ class ModelRegistry:
 
     def __init__(self) -> None:
         self._handlers: dict[str, BaseHandler] = {}
+        self._configured_aliases: dict[str, str] = {}
 
-    def register(self, model_id: str, handler: BaseHandler) -> None:
+    def register(
+        self, model_id: str, handler: BaseHandler, *, configured_path: str | None = None
+    ) -> None:
         self._handlers[model_id] = handler
+        if configured_path is not None:
+            self._configured_aliases[configured_path] = model_id
 
     def get(self, model_id: str) -> BaseHandler:
         try:
-            return self._handlers[model_id]
+            return self._handlers[self._configured_aliases.get(model_id, model_id)]
         except KeyError:
             raise ModelNotFoundError(f"Model '{model_id}' not found.")
 

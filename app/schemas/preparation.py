@@ -12,6 +12,7 @@ class PreparationCapabilities(BaseModel):
     instance_id: str
     server_version: str
     configured_model_id: str
+    configured_model_path: str
     explicit_prepare: Literal[True] = True
 
 

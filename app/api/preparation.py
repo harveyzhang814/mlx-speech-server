@@ -21,6 +21,7 @@ from app.worker import QueueFullError, QueueTimeoutError
 def create_preparation_router(
     registry: ModelRegistry,
     configured_model_id: str,
+    configured_model_path: str,
     instance_id: str,
     server_version: str,
 ) -> APIRouter:
@@ -86,6 +87,7 @@ def create_preparation_router(
             instance_id=instance_id,
             server_version=server_version,
             configured_model_id=configured_model_id,
+            configured_model_path=configured_model_path,
         )
 
     @router.post(

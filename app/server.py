@@ -41,7 +41,7 @@ def create_app(
 
         handler = WhisperHandler(model_path=config.model_path, worker=worker)
         await handler.initialize()
-        registry.register(handler.model_info().id, handler)
+        registry.register(handler.model_info().id, handler, configured_path=config.model_path)
         logger.info(f"Registered model: {handler.model_info().id}")
 
         yield
@@ -61,6 +61,7 @@ def create_app(
     app.include_router(create_preparation_router(
         registry,
         configured_model_id=config.model_path.rstrip("/").split("/")[-1],
+        configured_model_path=config.model_path,
         instance_id=_INSTANCE_ID,
         server_version=_SERVER_VERSION,
     ))

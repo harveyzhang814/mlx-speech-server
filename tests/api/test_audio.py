@@ -174,3 +174,26 @@ def test_streaming_response_includes_task_id_header(tmp_wav_file):
         resp.read()
     assert task_id is not None
     assert len(task_id) == 36
+
+
+def test_real_app_registers_only_exact_configured_audio_alias(tmp_wav_file):
+    from unittest.mock import patch
+    from app.config import ServerConfig
+    from app.server import create_app
+
+    config = ServerConfig(model_path="configured/whisper-large-v3-turbo")
+    registry = ModelRegistry()
+    with patch("app.server.WhisperHandler", return_value=FakeAudioHandler()):
+        with TestClient(create_app(config, registry, MagicMock())) as client:
+            response = client.post(
+                "/v1/audio/transcriptions",
+                **_audio_form(tmp_wav_file, {"model": config.model_path}),
+            )
+            assert response.status_code == 200
+            assert response.json() == {"text": " Hello world"}
+            wrong = client.post(
+                "/v1/audio/transcriptions",
+                **_audio_form(tmp_wav_file, {"model": "different/whisper-large-v3-turbo"}),
+            )
+            assert wrong.status_code == 400
+            assert len(registry.list_models()) == 1
