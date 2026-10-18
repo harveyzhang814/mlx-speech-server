@@ -320,3 +320,72 @@ async def test_active_status_is_running_during_inference():
         pass
     finally:
         worker.stop()
+
+
+async def test_cancelled_waiter_keeps_native_execution_busy():
+    from threading import Event
+    from unittest.mock import patch
+    from app.handlers.whisper import WhisperHandler
+
+    worker = InferenceWorker(max_size=5, timeout=5)
+    entered, release, second_entered = Event(), Event(), Event()
+    handler = WhisperHandler("configured/model", worker)
+
+    def native():
+        entered.set()
+        release.wait(3)
+
+    first = asyncio.create_task(worker.submit("native", native))
+    second = None
+    try:
+        assert await asyncio.to_thread(entered.wait, 1)
+        first.cancel()
+        with pytest.raises(TaskCancelledError):
+            await first
+        with patch("app.handlers.whisper._IDLE_TIMEOUT", 0), patch(
+            "app.handlers.whisper._WATCH_INTERVAL", 0.001
+        ), patch.object(handler, "_unload") as unload:
+            await handler.initialize()
+            handler._last_used = 0
+            await asyncio.sleep(0.02)
+            assert worker.active is True
+            assert worker._count == 1
+            worker.cancel("native")
+            worker.cancel("native")
+            assert worker.active_status == "cancelling"
+            unload.assert_not_called()
+            second = asyncio.create_task(worker.submit("second", second_entered.set))
+            await asyncio.sleep(0.02)
+            assert not second_entered.is_set()
+            release.set()
+            await second
+            assert second_entered.is_set()
+    finally:
+        release.set()
+        await handler.cleanup()
+        if second is not None:
+            await asyncio.gather(second, return_exceptions=True)
+        worker.stop()
+
+
+async def test_timed_out_native_keeps_queue_capacity_until_completion():
+    from threading import Event
+
+    worker = InferenceWorker(max_size=1, timeout=0.02)
+    release = Event()
+    try:
+        with pytest.raises(QueueTimeoutError):
+            await worker.submit("timed-out", lambda: release.wait(2))
+        assert worker.active
+        with pytest.raises(QueueFullError):
+            await worker.submit("too-soon", lambda: None)
+        release.set()
+        for _ in range(100):
+            if not worker.active:
+                break
+            await asyncio.sleep(0.001)
+        assert not worker.active
+        assert worker.queue_size == 0
+    finally:
+        release.set()
+        worker.stop()
