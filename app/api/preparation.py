@@ -1,0 +1,92 @@
+"""Nonblocking preparation of the server's configured model only."""
+
+from __future__ import annotations
+
+import asyncio
+from dataclasses import asdict, replace
+from typing import cast
+from uuid import uuid4
+
+from fastapi import APIRouter, Response
+from loguru import logger
+
+from app.handlers.whisper import WhisperHandler
+from app.preparation import PreparationError, PreparationSnapshot
+from app.registry import ModelRegistry
+from app.schemas.preparation import PreparationCapabilities, PreparationStatus
+from app.worker import QueueFullError, QueueTimeoutError
+
+
+def create_preparation_router(
+    registry: ModelRegistry,
+    configured_model_id: str,
+    instance_id: str,
+    server_version: str,
+) -> APIRouter:
+    router = APIRouter()
+    task: asyncio.Task | None = None
+    background_failure: PreparationSnapshot | None = None
+
+    def handler_for(model_id: str) -> WhisperHandler:
+        return cast(WhisperHandler, registry.get_configured(model_id, configured_model_id))
+
+    def status_for(handler: WhisperHandler) -> PreparationStatus:
+        snapshot = background_failure or handler.preparation_status()
+        return PreparationStatus(instance_id=instance_id, **asdict(snapshot))
+
+    async def prepare(handler: WhisperHandler) -> None:
+        nonlocal background_failure
+        try:
+            await handler.prepare()
+        except Exception as exc:
+            # Handler normally reports errors itself. Also consume unexpected
+            # background exceptions and expose a terminal state to polling clients.
+            code = "model_load_failed"
+            if isinstance(exc, QueueFullError):
+                code = "queue_full"
+            elif isinstance(exc, QueueTimeoutError):
+                code = "queue_timeout"
+            snapshot = handler.preparation_status()
+            background_failure = replace(
+                snapshot,
+                operation_id=snapshot.operation_id or str(uuid4()),
+                phase="failed",
+                loaded=False,
+                error=PreparationError(code=code, message=str(exc)),
+            )
+            logger.exception("Background model preparation failed")
+
+    @router.get("/v1/preparation/capabilities", response_model=PreparationCapabilities)
+    async def capabilities() -> PreparationCapabilities:
+        return PreparationCapabilities(
+            instance_id=instance_id,
+            server_version=server_version,
+            configured_model_id=configured_model_id,
+        )
+
+    @router.post(
+        "/v1/models/{model_id:path}/prepare",
+        response_model=PreparationStatus,
+        responses={202: {"model": PreparationStatus}},
+    )
+    async def prepare_model(model_id: str, response: Response) -> PreparationStatus:
+        nonlocal task, background_failure
+        handler = handler_for(model_id)
+        current = status_for(handler)
+        if current.loaded:
+            response.status_code = 200
+            return current
+        if task is None or task.done():
+            background_failure = None
+            task = asyncio.create_task(prepare(handler))
+        # Give the handler one turn to create its shared operation/snapshot. Do
+        # not wait for worker admission, download, or weight loading to complete.
+        await asyncio.sleep(0)
+        response.status_code = 202
+        return status_for(handler)
+
+    @router.get("/v1/models/{model_id:path}/preparation", response_model=PreparationStatus)
+    async def preparation(model_id: str) -> PreparationStatus:
+        return status_for(handler_for(model_id))
+
+    return router
