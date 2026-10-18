@@ -15,13 +15,30 @@ def cli() -> None:
 
 
 @cli.command()
-def install() -> None:
+@click.option("--json", "as_json", is_flag=True, help="Print machine-readable installation result.")
+@click.option("--model", default=None, help="Model repo for a newly created config only.")
+@click.option("--port", type=click.IntRange(1, 65535), default=None,
+              help="Port for a newly created config only.")
+@click.option("--use-current-runtime", is_flag=True,
+              help="Register this already provisioned runtime without installing dependencies.")
+def install(as_json: bool, model: str | None, port: int | None,
+            use_current_runtime: bool) -> None:
     """Create service venv, install deps, register launchd agent."""
     try:
-        service.install()
+        kwargs = {"model": model, "port": port}
+        if use_current_runtime:
+            kwargs["use_current_runtime"] = True
+        service.install(**kwargs)
     except Exception as e:
-        click.echo(f"Install failed: {e}")
+        if as_json:
+            click.echo(json.dumps({"installed": False, "error": {"code": "install_failed", "message": str(e)}}))
+        else:
+            click.echo(f"Install failed: {e}")
         sys.exit(1)
+    if as_json:
+        click.echo(json.dumps({"installed": True, "config": str(service.CONFIG_ENV),
+                               "plist": str(service.PLIST_PATH)}))
+        return
     click.echo("Installation complete.")
     click.echo(f"  Venv:     {service.VENV_DIR}")
     click.echo(f"  Config:   {service.CONFIG_ENV}")
@@ -78,6 +95,30 @@ def start() -> None:
         sys.exit(1)
     click.echo("Service started.")
     _print_status()
+
+
+@cli.command("ensure-running")
+@click.option("--json", "as_json", is_flag=True, help="Print machine-readable startup result.")
+@click.option("--model", default=None, help="Model repo for a newly created config only.")
+@click.option("--port", type=click.IntRange(1, 65535), default=None,
+              help="Port for a newly created config only.")
+@click.option("--use-current-runtime", is_flag=True,
+              help="Register this already provisioned runtime when no service is installed.")
+def ensure_running(as_json: bool, model: str | None, port: int | None,
+                   use_current_runtime: bool) -> None:
+    """Ensure service HTTP availability without restarting an existing process."""
+    kwargs = {"model": model, "port": port}
+    if use_current_runtime:
+        kwargs["use_current_runtime"] = True
+    result = service.ensure_running(**kwargs)
+    if as_json:
+        click.echo(json.dumps(result))
+    elif "error" in result:
+        click.echo(result["error"]["message"])
+    else:
+        click.echo(f"Service running (PID {result['pid']}, port {result['port']}).")
+    if "error" in result:
+        sys.exit(1)
 
 
 @cli.command()

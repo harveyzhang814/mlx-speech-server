@@ -1,15 +1,20 @@
 """macOS launchd service management for mlx-speech-server."""
+import fcntl
 import importlib.metadata
 import json
 import os
+import socket
 import subprocess
 import sys
+import time
 import urllib.parse
 import urllib.request
 import xml.sax.saxutils
 from pathlib import Path
 
-from app.config import DEFAULT_PORT
+from app.config import DEFAULT_PORT, ServerConfig
+
+STARTUP_TIMEOUT = 30.0
 
 SERVICE_LABEL = "com.local.mlx-speech-server"
 CONFIG_DIR = Path.home() / ".config/mlx-speech-server"
@@ -63,7 +68,7 @@ def _get_project_dir() -> Path:
             data = json.loads(raw)
             url = data.get("url", "")
             if url.startswith("file://"):
-                return Path(urllib.parse.urlparse(url).path)
+                return Path(urllib.parse.unquote(urllib.parse.urlparse(url).path))
     except Exception:
         pass
     raise RuntimeError(
@@ -74,7 +79,10 @@ def _get_project_dir() -> Path:
 def _get_install_args() -> list[str]:
     """Return pip install arguments for installing into the service venv."""
     if _is_local_install():
-        return ["-e", str(_get_project_dir())]
+        source = _get_project_dir()
+        if source.suffix == ".whl":
+            return [str(source)]
+        return ["-e", str(source)]
     return ["mlx-speech-server"]
 
 
@@ -92,14 +100,14 @@ def _read_env() -> dict[str, str]:
     return result
 
 
-def _build_plist(env_vars: dict[str, str]) -> str:
+def _build_plist(env_vars: dict[str, str], runner: Path | None = None) -> str:
     """Generate launchd plist XML content."""
     env_entries = "".join(
         f"        <key>{xml.sax.saxutils.escape(k)}</key>\n        <string>{xml.sax.saxutils.escape(v)}</string>\n"
         for k, v in env_vars.items()
     )
-    runner = VENV_DIR / "bin/mlx-run"
-    path = f"{VENV_DIR}/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
+    runner = runner or VENV_DIR / "bin/mlx-run"
+    path = f"{runner.parent}:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
     return f"""<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -108,12 +116,12 @@ def _build_plist(env_vars: dict[str, str]) -> str:
     <string>{SERVICE_LABEL}</string>
     <key>ProgramArguments</key>
     <array>
-        <string>{runner}</string>
+        <string>{xml.sax.saxutils.escape(str(runner))}</string>
     </array>
     <key>EnvironmentVariables</key>
     <dict>
         <key>PATH</key>
-        <string>{path}</string>
+        <string>{xml.sax.saxutils.escape(path)}</string>
 {env_entries}    </dict>
     <key>StandardOutPath</key>
     <string>{STDOUT_LOG}</string>
@@ -134,23 +142,129 @@ def _build_plist(env_vars: dict[str, str]) -> str:
 </plist>"""
 
 
-def install() -> None:
-    """Create service venv, install package, register launchd plist."""
+def install(*, model: str | None = None, port: int | None = None,
+            use_current_runtime: bool = False) -> None:
+    """Register a service; optional first-config values never replace existing config.
+
+    A provisioned runtime can register its own mlx-run without pip or a second venv.
+    This is explicit so existing CLI installation behavior remains available.
+    """
     _require_darwin()
+    runner = None
+    if use_current_runtime and is_installed():
+        return
+    if use_current_runtime:
+        runner = Path(sys.executable).absolute().parent / "mlx-run"
+        if not runner.is_file() or not os.access(runner, os.X_OK):
+            raise RuntimeError(f"Current runtime has no executable mlx-run: {runner}")
+    if not CONFIG_ENV.exists():
+        _validate_first_config(model, port)
+
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    if not use_current_runtime:
+        if not (VENV_DIR / "bin/python").exists():
+            subprocess.run([sys.executable, "-m", "venv", str(VENV_DIR)], check=True,
+                           capture_output=True, text=True)
+        subprocess.run(
+            [str(VENV_DIR / "bin/pip"), "install"] + _get_install_args(),
+            check=True, capture_output=True, text=True,
+        )
 
-    if not (VENV_DIR / "bin/python").exists():
-        subprocess.run([sys.executable, "-m", "venv", str(VENV_DIR)], check=True)
-
-    subprocess.run(
-        [str(VENV_DIR / "bin/pip"), "install"] + _get_install_args(),
-        check=True,
-    )
-
+    # Exclusive create preserves even an empty pre-existing config byte for byte.
+    try:
+        with CONFIG_ENV.open("x") as config:
+            config.write("WHISPER_HOST=127.0.0.1\n")
+            config.write(f"WHISPER_PORT={port if port is not None else DEFAULT_PORT}\n")
+            config.write(f"WHISPER_MODEL_PATH={model or ServerConfig.model_path}\n")
+    except FileExistsError:
+        pass
     env_vars = _read_env()
     PLIST_PATH.parent.mkdir(parents=True, exist_ok=True)
-    PLIST_PATH.write_text(_build_plist(env_vars))
+    PLIST_PATH.write_text(_build_plist(env_vars, runner))
+
+
+def _validate_first_config(model: str | None, port: int | None) -> None:
+    if port is not None and not 1 <= port <= 65535:
+        raise ValueError("Port must be between 1 and 65535")
+    if model is not None and (not model.strip() or any(c in model for c in "\n\r\x00")):
+        raise ValueError("Model must be a non-empty single-line identifier")
+
+
+def _port_in_use(port: int) -> bool:
+    """Detect a TCP listener even if it does not implement HTTP or /health."""
+    host = _read_env().get("WHISPER_HOST", "127.0.0.1")
+    host = {"0.0.0.0": "127.0.0.1", "::": "::1"}.get(host, host)
+    try:
+        with socket.create_connection((host, port), timeout=0.5):
+            return True
+    except ConnectionRefusedError:
+        return False
+
+
+def ensure_running(*, model: str | None = None, port: int | None = None,
+                   use_current_runtime: bool = False) -> dict:
+    """Start a missing service under a user-wide lock, never restart a process.
+
+    Health describes HTTP availability only; model preparation is a separate API.
+    First-install options are ignored when a config or service already exists.
+    """
+    result = {"running": False, "pid": None, "port": DEFAULT_PORT,
+              "health": None, "service_label": SERVICE_LABEL}
+    def fail(code: str, message: str) -> dict:
+        return {**result, "error": {"code": code, "message": message}}
+
+    try:
+        _require_darwin()
+        CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        # Lock-file inode persists; unlinking it would permit two independent locks.
+        with (CONFIG_DIR / "ensure-running.lock").open("a") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            env = _read_env()
+            configured_port = int(env.get("WHISPER_PORT", DEFAULT_PORT))
+            current = get_status()
+            if not current.get("installed") and not CONFIG_ENV.exists():
+                _validate_first_config(model, port)
+                configured_port = port if port is not None else DEFAULT_PORT
+            result["port"] = configured_port
+            for key in ("running", "pid", "port", "health"):
+                if key in current:
+                    result[key] = current[key]
+            if result["running"]:
+                if not isinstance(result["health"], dict) or result["health"].get("status") != "ok":
+                    return fail("unhealthy_service", "Existing service process is not healthy; left running.")
+                return result
+            if _port_in_use(configured_port):
+                return fail("port_in_use", f"Another listener owns port {configured_port}; left untouched.")
+            if not current.get("installed"):
+                kwargs = {"model": model, "port": port}
+                if use_current_runtime:
+                    kwargs["use_current_runtime"] = True
+                install(**kwargs)
+                if _port_in_use(configured_port):
+                    return fail("port_in_use", f"Another listener owns port {configured_port}; left untouched.")
+            LOG_DIR.mkdir(parents=True, exist_ok=True)
+            target = f"gui/{os.getuid()}"
+            if current.get("loaded"):
+                # No -k: if another actor just started it, leave that process alone.
+                command = ["launchctl", "kickstart", f"{target}/{SERVICE_LABEL}"]
+            else:
+                command = ["launchctl", "bootstrap", target, str(PLIST_PATH)]
+            subprocess.run(command, check=True, capture_output=True, text=True)
+            deadline = time.monotonic() + STARTUP_TIMEOUT
+            while True:
+                current = get_status()
+                for key in ("running", "pid", "port", "health"):
+                    if key in current:
+                        result[key] = current[key]
+                if (result["running"] and isinstance(result["health"], dict)
+                        and result["health"].get("status") == "ok"):
+                    return result
+                if time.monotonic() >= deadline:
+                    return fail("startup_timeout", "Service did not become healthy before the startup deadline.")
+                time.sleep(0.1)
+    except Exception as exc:
+        return fail("startup_failed", str(exc))
 
 
 def _launchctl_bootout() -> None:
