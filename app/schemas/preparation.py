@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class PreparationCapabilities(BaseModel):
@@ -28,4 +28,5 @@ class PreparationStatus(BaseModel):
     phase: Literal["idle", "downloading", "loading", "ready", "failed"]
     loaded: bool
     progress: float | None
+    downloaded_bytes: int | None = Field(default=None, ge=0)
     error: PreparationErrorResponse | None

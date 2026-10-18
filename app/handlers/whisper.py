@@ -5,6 +5,7 @@ import json
 import time
 from pathlib import Path
 from dataclasses import replace
+from threading import RLock
 from uuid import uuid4
 from typing import AsyncGenerator
 
@@ -36,6 +37,7 @@ class WhisperHandler(BaseHandler, AudioCapable):
         self._last_used: float = 0.0
         self._watcher_task: asyncio.Task | None = None
         self._model_adapter = WhisperModelAdapter()
+        self._preparation_lock = RLock()
         self._preparation = PreparationSnapshot(operation_id=None, model_id=self._model_id)
         self._preparation_task: asyncio.Task | None = None
         self._loaded_model = None
@@ -60,7 +62,8 @@ class WhisperHandler(BaseHandler, AudioCapable):
         return ModelCard(id=self._model_id)
 
     def preparation_status(self) -> PreparationSnapshot:
-        return self._preparation
+        with self._preparation_lock:
+            return self._preparation
 
     async def prepare(self) -> PreparationSnapshot:
         self._last_used = time.time()
@@ -68,9 +71,10 @@ class WhisperHandler(BaseHandler, AudioCapable):
             operation_id = self._preparation.operation_id or str(uuid4())
             if not self._preparation.loaded:
                 operation_id = str(uuid4())
-                self._preparation = PreparationSnapshot(
-                    operation_id=operation_id, model_id=self._model_id, phase="loading"
-                )
+                with self._preparation_lock:
+                    self._preparation = PreparationSnapshot(
+                        operation_id=operation_id, model_id=self._model_id
+                    )
             self._preparation_task = asyncio.create_task(self._prepare_operation(operation_id))
         # Each client owns its wait, never the shared loading operation.
         return await asyncio.shield(self._preparation_task)
@@ -108,24 +112,52 @@ class WhisperHandler(BaseHandler, AudioCapable):
     def _preparation_failed(
         self, exc: Exception, code: str = "model_load_failed"
     ) -> PreparationSnapshot:
-        self._preparation = replace(
-            self._preparation, phase="failed", loaded=False,
-            error=PreparationError(code=code, message=str(exc)),
-        )
+        with self._preparation_lock:
+            self._preparation = replace(
+                self._preparation, phase="failed", loaded=False,
+                error=PreparationError(code=code, message=str(exc)),
+            )
         return self._preparation
 
     def _prepare_model(self) -> PreparationSnapshot:
         current = self._model_adapter.current_model(self.model_path)
         if self._preparation.loaded and current is not None and current is self._loaded_model:
             return self._preparation
-        self._preparation = replace(self._preparation, phase="loading", loaded=False, error=None)
+        operation_id = self._preparation.operation_id
+        with self._preparation_lock:
+            self._preparation = replace(self._preparation, phase="idle", loaded=False, progress=None,
+                                        downloaded_bytes=None, error=None)
+
+        active = True
+
+        def report(phase: str, received: int | None) -> None:
+            nonlocal active
+            with self._preparation_lock:
+                current = self._preparation
+                if not active or current.operation_id != operation_id or current.phase not in {"idle", "downloading"}:
+                    return
+                if phase == "downloading":
+                    if received is None or received < (current.downloaded_bytes or 0):
+                        return
+                    self._preparation = replace(
+                        current, phase="downloading", loaded=False, progress=None,
+                        downloaded_bytes=received, error=None,
+                    )
+                elif phase == "loading":
+                    active = False
+                    self._preparation = replace(current, phase="loading", loaded=False, error=None)
+
         try:
-            self._loaded_model = self._model_adapter.load(self.model_path)
+            self._loaded_model = self._model_adapter.load(self.model_path, report=report)
         except Exception as exc:
             self._loaded_model = None
             self._model_adapter.unload()
             return self._preparation_failed(exc)
-        self._preparation = replace(self._preparation, phase="ready", loaded=True, error=None)
+        finally:
+            with self._preparation_lock:
+                active = False
+        with self._preparation_lock:
+            self._preparation = replace(self._preparation, phase="ready", loaded=True, error=None)
         self._last_used = time.time()
         return self._preparation
 

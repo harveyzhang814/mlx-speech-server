@@ -23,7 +23,7 @@ class Model:
 
 
 @asynccontextmanager
-async def preparation_client(*, fail=False, blocked=False):
+async def preparation_client(*, fail=False, blocked=False, download=None):
     holder = importlib.import_module("mlx_whisper.transcribe").ModelHolder
     worker = InferenceWorker(max_size=5, timeout=5)
     handler = WhisperHandler("configured/model", worker)
@@ -48,6 +48,8 @@ async def preparation_client(*, fail=False, blocked=False):
     with (
         patch.object(holder, "model", None),
         patch.object(holder, "model_path", None),
+        patch("app.preparation.snapshot_download", side_effect=download,
+              return_value="configured/model"),
         patch.object(holder, "get_model", side_effect=load),
         patch(
             "app.handlers.whisper.mlx_whisper.transcribe", side_effect=AssertionError("inference")
@@ -101,11 +103,12 @@ async def test_prepare_polling_reaches_ready():
             "phase",
             "loaded",
             "progress",
+            "downloaded_bytes",
             "error",
         }
         assert loading["instance_id"] == caps["instance_id"]
         assert loading["operation_id"]
-        assert loading["phase"] == "loading"
+        assert loading["phase"] in {"idle", "loading"}
         assert loading["loaded"] is False
         assert loading["progress"] is None
         assert loading["error"] is None
@@ -301,3 +304,42 @@ async def test_capabilities_publish_actual_configured_path():
         caps = (await client.get("/v1/preparation/capabilities")).json()
         assert caps["configured_model_id"] == "model"
         assert caps["configured_model_path"] == "configured/model"
+
+
+async def test_api_publishes_actual_download_bytes_before_separate_loading_phase():
+    downloading, acquired = Event(), Event()
+
+    def download(*, repo_id, tqdm_class):
+        assert repo_id == "configured/model"
+        with tqdm_class(unit="B", total=0, disable=True) as bar:
+            bar.update(100)
+            downloading.set()
+            assert acquired.wait(3)
+        return "configured/model"
+
+    async with preparation_client(blocked=True, download=download) as (
+        client, handler, holder, loading, release, calls
+    ):
+        task = asyncio.create_task(client.post("/v1/models/model/prepare"))
+        try:
+            assert await asyncio.to_thread(downloading.wait, 1)
+            response = await task
+            assert response.status_code == 202
+            first = (await client.get("/v1/models/model/preparation")).json()
+            assert first["phase"] == "downloading"
+            assert first["downloaded_bytes"] == 100
+            assert first["progress"] is None
+            assert first["loaded"] is False
+            assert (await client.get("/v1/models/model/preparation")).json() == first
+            acquired.set()
+            assert await asyncio.to_thread(loading.wait, 1)
+            state = (await client.get("/v1/models/model/preparation")).json()
+            assert state["phase"] == "loading"
+            assert state["downloaded_bytes"] == 100
+            assert state["operation_id"] == first["operation_id"]
+        finally:
+            acquired.set()
+            release.set()
+        ready = await poll_terminal(client)
+        assert ready["loaded"] is True
+        assert ready["downloaded_bytes"] == 100

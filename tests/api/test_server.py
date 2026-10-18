@@ -112,6 +112,7 @@ async def test_shutdown_waits_for_background_preparation():
     with (
         patch.object(holder, "model", None),
         patch.object(holder, "model_path", None),
+        patch("app.preparation.snapshot_download", return_value="configured/model"),
         patch.object(holder, "get_model", side_effect=load),
     ):
         lifespan = app.router.lifespan_context(app)
