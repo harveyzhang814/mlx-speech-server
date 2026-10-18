@@ -109,10 +109,18 @@ async def test_shutdown_waits_for_background_preparation():
         holder.model_path = path
         return holder.model
 
+    from huggingface_hub.file_download import DryRunFileInfo
+
+    def snapshot(*, repo_id, dry_run=False, **kwargs):
+        if dry_run:
+            return [DryRunFileInfo("a" * 40, 1024, "weights.safetensors", "configured/model/weights.safetensors", False, True)]
+        return "configured/model"
+
     with (
         patch.object(holder, "model", None),
         patch.object(holder, "model_path", None),
-        patch("app.preparation.snapshot_download", return_value="configured/model"),
+        patch("app.preparation.snapshot_download", side_effect=snapshot),
+        patch("app.preparation.hf_hub_download", return_value="configured/model/weights.safetensors"),
         patch.object(holder, "get_model", side_effect=load),
     ):
         lifespan = app.router.lifespan_context(app)

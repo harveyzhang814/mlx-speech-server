@@ -6,9 +6,18 @@ from unittest.mock import patch
 
 import mlx.core as mx
 import pytest
+from huggingface_hub.file_download import DryRunFileInfo
 
 from app.handlers.whisper import WhisperHandler
 from app.worker import InferenceWorker
+
+
+def snapshot_result(path):
+    def resolve(*, repo_id, dry_run=False, **kwargs):
+        if dry_run:
+            return [DryRunFileInfo("a" * 40, 1024, "weights.safetensors", str(path) + "/weights.safetensors", False, True)]
+        return str(path)
+    return resolve
 
 
 @pytest.fixture
@@ -17,8 +26,8 @@ def preparation():
     worker = InferenceWorker(max_size=5, timeout=5)
     handler = WhisperHandler("configured/model", worker)
     with patch.object(holder, "model", None), patch.object(holder, "model_path", None), patch(
-        "app.preparation.snapshot_download", return_value="configured/model"
-    ):
+        "app.preparation.snapshot_download", side_effect=snapshot_result("configured/model")
+    ), patch("app.preparation.hf_hub_download", return_value="configured/model/weights.safetensors"):
         yield handler, holder
     worker.stop()
 
@@ -233,7 +242,7 @@ def test_prefetch_bytes_then_local_load_preserves_configured_holder_key(tmp_path
     events, fetches, loads = [], [], []
     model = Model()
 
-    def snapshot(*, repo_id, tqdm_class):
+    def download(repo_id, *, filename, revision, tqdm_class):
         fetches.append(repo_id)
         with tqdm_class(unit="B", total=0, disable=True) as bar:
             bar.update(100)
@@ -247,8 +256,8 @@ def test_prefetch_bytes_then_local_load_preserves_configured_holder_key(tmp_path
         return model
 
     with patch.object(holder, "model", None), patch.object(holder, "model_path", None), patch(
-        "app.preparation.snapshot_download", side_effect=snapshot
-    ), patch.object(transcribe_module, "load_model", side_effect=load):
+        "app.preparation.snapshot_download", side_effect=snapshot_result(tmp_path)
+    ), patch("app.preparation.hf_hub_download", side_effect=download), patch.object(transcribe_module, "load_model", side_effect=load):
         adapter = WhisperModelAdapter()
         assert adapter.load("configured/model", report=lambda *event: events.append(event)) is model
         assert holder.model_path == "configured/model"
@@ -282,17 +291,23 @@ def test_pinned_hf_public_snapshot_reports_aggregate_bytes_not_file_count(tmp_pa
     info = SimpleNamespace(sha="a" * 40, siblings=[SimpleNamespace(rfilename="config.json"),
                                                 SimpleNamespace(rfilename="weights.safetensors")])
     events = []
+    root = tmp_path / "models--configured--model" / "snapshots" / ("a" * 40)
+    root.mkdir(parents=True)
 
-    def download(repo_id, *, filename, tqdm_class, **kwargs):
-        with tqdm_class(total=32, initial=0) as bar:
+    def download(repo_id, *, filename, tqdm_class, dry_run=False, **kwargs):
+        if dry_run:
+            return DryRunFileInfo("a" * 40, 32, filename, str(root / filename), False, True)
+        with tqdm_class(total=32, initial=0, unit="B") as bar:
             bar.update(32)
-        return str(tmp_path / filename)
+        return str(root / filename)
 
     with patch.object(holder, "model", None), patch.object(holder, "model_path", None), install_loader(
         holder, []
     ), patch.object(module, "HfApi") as api, patch.object(
         module, "hf_hub_download", side_effect=download
-    ), patch("app.preparation.snapshot_download", side_effect=partial(snapshot_download, cache_dir=tmp_path)):
+    ), patch("app.preparation.hf_hub_download", side_effect=download), patch(
+        "app.preparation.snapshot_download", side_effect=partial(snapshot_download, cache_dir=tmp_path)
+    ):
         api.return_value.repo_info.return_value = info
         WhisperModelAdapter().load("configured/model", report=lambda *event: events.append(event))
     assert events[0] == ("downloading", 0)
@@ -306,7 +321,7 @@ async def test_download_and_loading_publish_bytes_under_worker_lock_ignore_late_
     captured = []
     calls = []
 
-    def snapshot(*, repo_id, tqdm_class):
+    def snapshot(repo_id, *, filename, revision, tqdm_class):
         bar = tqdm_class(unit="B", total=0, disable=True)
         captured.append(bar)
         bar.update(100)
@@ -314,7 +329,7 @@ async def test_download_and_loading_publish_bytes_under_worker_lock_ignore_late_
         assert acquire.wait(3)
         return "configured/model"
 
-    with patch("app.preparation.snapshot_download", side_effect=snapshot), install_loader(
+    with patch("app.preparation.hf_hub_download", side_effect=snapshot), install_loader(
         holder, calls, loading, evaluate
     ):
         task = asyncio.create_task(handler.prepare())
@@ -365,14 +380,14 @@ async def test_transcription_reuses_prefetched_holder_without_second_download_or
         assert holder.get_model(path_or_hf_repo, mx.float16) is model
         return {"text": "reused", "language": "en", "segments": []}
 
-    with patch("app.preparation.snapshot_download", return_value=str(tmp_path)) as fetch, patch.object(
+    with patch("app.preparation.snapshot_download", side_effect=snapshot_result(tmp_path)) as fetch, patch.object(
         module, "load_model", return_value=model
     ) as load, patch("app.handlers.whisper.mlx_whisper.transcribe", side_effect=transcribe):
         assert (await handler.prepare()).loaded
         assert holder.model_path == "configured/model"
         assert (await handler.transcribe(Path("not-read.wav"), TranscriptionParams(), "next")).text == "reused"
         assert handler._loaded_model is model
-        assert fetch.call_count == 1
+        assert fetch.call_count == 2
         load.assert_called_once_with(str(tmp_path), dtype=mx.float16)
 
 
@@ -382,7 +397,7 @@ async def test_download_outlives_worker_deadline_without_releasing_lock_or_dupli
     entered, release = Event(), Event()
     fetches = []
 
-    def download(*, repo_id, tqdm_class):
+    def download(repo_id, *, filename, revision, tqdm_class):
         fetches.append(repo_id)
         with tqdm_class(unit="B", total=0, disable=True) as bar:
             bar.update(64)
@@ -390,7 +405,7 @@ async def test_download_outlives_worker_deadline_without_releasing_lock_or_dupli
             assert release.wait(3)
         return "configured/model"
 
-    with patch("app.preparation.snapshot_download", side_effect=download), install_loader(holder, []):
+    with patch("app.preparation.hf_hub_download", side_effect=download), install_loader(holder, []):
         first = asyncio.create_task(handler.prepare())
         try:
             assert await asyncio.to_thread(entered.wait, 1)
@@ -408,3 +423,123 @@ async def test_download_outlives_worker_deadline_without_releasing_lock_or_dupli
         assert a == b
         assert a.loaded
         assert fetches == ["configured/model"]
+
+
+@pytest.mark.parametrize("increments, expected", [
+    ([(), (), ()], [0]),
+    ([(8,), (8,), (8, 4)], [0, 8, 12]),
+])
+def test_pinned_resume_and_retry_offsets_do_not_count_as_new_bytes(tmp_path, increments, expected):
+    from functools import partial
+    from types import SimpleNamespace
+    from huggingface_hub import snapshot_download
+    from huggingface_hub.file_download import DryRunFileInfo
+    from app.preparation import WhisperModelAdapter
+
+    commit = "a" * 40
+    root = tmp_path / "models--configured--model" / "snapshots" / commit
+    root.mkdir(parents=True)
+    module = importlib.import_module("huggingface_hub._snapshot_download")
+    holder = importlib.import_module("mlx_whisper.transcribe").ModelHolder
+    info = SimpleNamespace(sha=commit, siblings=[SimpleNamespace(rfilename="weights.safetensors")])
+    events = []
+
+    def download(repo_id, *, filename, tqdm_class, dry_run=False, **kwargs):
+        assert repo_id == "configured/model"
+        assert kwargs["revision"] == commit
+        if dry_run:
+            return DryRunFileInfo(commit, 1024, filename, str(root / filename), False, True)
+        for changes in increments:
+            with tqdm_class(total=1024, initial=64, unit="B") as bar:
+                for change in changes:
+                    bar.update(change)
+        return str(root / filename)
+
+    with patch.object(holder, "model", None), patch.object(holder, "model_path", None), install_loader(
+        holder, []
+    ), patch.object(module, "HfApi") as api, patch.object(
+        module, "hf_hub_download", side_effect=download
+    ), patch("app.preparation.hf_hub_download", side_effect=download, create=True), patch(
+        "app.preparation.snapshot_download", side_effect=partial(snapshot_download, revision=commit, cache_dir=tmp_path)
+    ):
+        api.return_value.repo_info.return_value = info
+        WhisperModelAdapter().load("configured/model", report=lambda *event: events.append(event))
+    assert [value for phase, value in events if phase == "downloading"] == expected
+    assert events[-1] == ("loading", None)
+
+
+def test_pinned_http_get_retry_only_reports_new_bytes_after_existing_resume(tmp_path):
+    from contextlib import contextmanager
+    from io import BytesIO
+    import httpx
+    from app.preparation import WhisperModelAdapter
+    from huggingface_hub import file_download
+
+    holder = importlib.import_module("mlx_whisper.transcribe").ModelHolder
+    events, ranges = [], []
+    script = [([b"n" * 8], True), ([], True), ([b"n" * 4], False)]
+
+    @contextmanager
+    def stream(**kwargs):
+        ranges.append(kwargs["headers"]["Range"])
+        chunks, retry = script[len(ranges) - 1]
+        response = httpx.Response(206, request=httpx.Request("GET", kwargs["url"]),
+                                  headers={"Content-Length": "12", "Content-Range": "bytes 64-75/76"})
+
+        def iter_bytes(chunk_size):
+            yield from chunks
+            if retry:
+                raise httpx.ReadTimeout("controlled retry")
+
+        response.iter_bytes = iter_bytes
+        yield response
+
+    def download(repo_id, *, filename, revision, tqdm_class):
+        assert repo_id == "configured/model" and revision == "a" * 40
+        with BytesIO(b"cached" + b"x" * 58) as partial:
+            partial.seek(64)
+            with patch.object(file_download, "http_stream_backoff", side_effect=stream):
+                file_download.http_get("https://unused.example/weights", partial, resume_size=64,
+                                       expected_size=76, tqdm_class=tqdm_class)
+            assert partial.tell() == 76
+        return str(tmp_path / filename)
+
+    with patch.object(holder, "model", None), patch.object(holder, "model_path", None), install_loader(
+        holder, []
+    ), patch("app.preparation.snapshot_download", side_effect=snapshot_result(tmp_path)), patch(
+        "app.preparation.hf_hub_download", side_effect=download
+    ):
+        WhisperModelAdapter().load("configured/model", report=lambda *event: events.append(event))
+    assert ranges == ["bytes=64-", "bytes=72-", "bytes=72-"]
+    assert [value for phase, value in events if phase == "downloading"] == [0, 8, 12]
+
+
+def test_offline_cached_snapshot_still_loads_without_file_transfer(tmp_path):
+    from app.preparation import WhisperModelAdapter
+    from huggingface_hub.errors import DryRunError
+
+    holder = importlib.import_module("mlx_whisper.transcribe").ModelHolder
+    calls = []
+    with patch.object(holder, "model", None), patch.object(holder, "model_path", None), install_loader(
+        holder, calls
+    ), patch("app.preparation.snapshot_download", side_effect=[DryRunError("offline"), str(tmp_path)]) as resolve, patch(
+        "app.preparation.hf_hub_download"
+    ) as transfer:
+        WhisperModelAdapter().load("configured/model")
+        assert holder.model_path == "configured/model"
+        transfer.assert_not_called()
+        assert resolve.call_args_list[-1].kwargs == {"repo_id": "configured/model", "local_files_only": True}
+    assert calls == [(str(tmp_path), mx.float16)]
+
+
+def test_inconsistent_discovery_revision_never_transfers_arbitrary_snapshot():
+    from app.preparation import WhisperModelAdapter
+
+    holder = importlib.import_module("mlx_whisper.transcribe").ModelHolder
+    files = [DryRunFileInfo(commit * 40, 32, "weights", "/unused", False, True) for commit in ["a", "b"]]
+    with patch.object(holder, "model", None), patch.object(holder, "model_path", None), patch(
+        "app.preparation.snapshot_download", return_value=files
+    ), patch("app.preparation.hf_hub_download") as transfer:
+        with pytest.raises(RuntimeError, match="one configured revision"):
+            WhisperModelAdapter().load("configured/model")
+        transfer.assert_not_called()

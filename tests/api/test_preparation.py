@@ -9,6 +9,7 @@ from unittest.mock import patch
 import httpx
 import mlx.core as mx
 import pytest
+from huggingface_hub.file_download import DryRunFileInfo
 
 from app.config import ServerConfig
 from app.handlers.whisper import WhisperHandler
@@ -45,11 +46,17 @@ async def preparation_client(*, fail=False, blocked=False, download=None):
         holder.model_path = path
         return holder.model
 
+    def snapshot(*, repo_id, dry_run=False, **kwargs):
+        if dry_run:
+            return [DryRunFileInfo("a" * 40, 1024, "weights.safetensors", "configured/model/weights.safetensors", False, True)]
+        return "configured/model"
+
     with (
         patch.object(holder, "model", None),
         patch.object(holder, "model_path", None),
-        patch("app.preparation.snapshot_download", side_effect=download,
-              return_value="configured/model"),
+        patch("app.preparation.snapshot_download", side_effect=snapshot),
+        patch("app.preparation.hf_hub_download", side_effect=download,
+              return_value="configured/model/weights.safetensors"),
         patch.object(holder, "get_model", side_effect=load),
         patch(
             "app.handlers.whisper.mlx_whisper.transcribe", side_effect=AssertionError("inference")
@@ -309,7 +316,7 @@ async def test_capabilities_publish_actual_configured_path():
 async def test_api_publishes_actual_download_bytes_before_separate_loading_phase():
     downloading, acquired = Event(), Event()
 
-    def download(*, repo_id, tqdm_class):
+    def download(repo_id, *, filename, revision, tqdm_class):
         assert repo_id == "configured/model"
         with tqdm_class(unit="B", total=0, disable=True) as bar:
             bar.update(100)
@@ -343,3 +350,30 @@ async def test_api_publishes_actual_download_bytes_before_separate_loading_phase
         ready = await poll_terminal(client)
         assert ready["loaded"] is True
         assert ready["downloaded_bytes"] == 100
+
+
+async def test_api_resume_contexts_without_new_bytes_keep_zero_activity():
+    resuming, release_resume = Event(), Event()
+
+    def download(repo_id, *, filename, revision, tqdm_class):
+        for _ in range(3):
+            with tqdm_class(unit="B", total=1024, initial=64):
+                pass
+        resuming.set()
+        assert release_resume.wait(3)
+        return "configured/model/weights.safetensors"
+
+    async with preparation_client(download=download) as (client, *_):
+        task = asyncio.create_task(client.post("/v1/models/model/prepare"))
+        try:
+            assert await asyncio.to_thread(resuming.wait, 1)
+            assert (await task).status_code == 202
+            for _ in range(3):
+                state = (await client.get("/v1/models/model/preparation")).json()
+                assert state["phase"] == "downloading"
+                assert state["downloaded_bytes"] == 0
+                assert state["progress"] is None
+                assert state["loaded"] is False
+        finally:
+            release_resume.set()
+        assert (await poll_terminal(client))["loaded"] is True
