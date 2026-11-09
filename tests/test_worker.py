@@ -73,7 +73,6 @@ async def test_timeout_raises_queue_timeout_error():
 # ── task_id uniqueness ────────────────────────────────────────────────────────
 
 async def test_each_submit_uses_the_provided_task_id(worker):
-    seen_ids: list[str] = []
     tid1 = str(uuid.uuid4())
     tid2 = str(uuid.uuid4())
 
