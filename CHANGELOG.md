@@ -1,3 +1,25 @@
+## v0.3.0 — 2026-11-09
+
+### Features
+- Add explicit model preparation without an audio upload, with nonblocking prepare requests and pollable download, loading, ready, and failure states
+- Add a versioned preparation capabilities endpoint identifying the configured model and server instance
+- Add `mlx ensure-running --json` to install or start a missing service without restarting an existing healthy process
+- Add first-install model and port options, machine-readable installation results, and registration of an already provisioned runtime
+- Accept the exact configured model path as an alias in audio transcription requests
+
+### Bug Fixes
+- Share repeated preparation requests and reuse the same evaluated model weights for subsequent transcription
+- Keep native loading and inference serialized after request timeout or cancellation; coordinate preparation, idle unload, and shutdown
+- Report download activity without counting existing resume offsets or overlapping retries, and preserve model readiness on queue admission errors
+- Preserve structured service failure diagnostics with sensitive details redacted, and probe the configured host correctly
+
+### Chores / Other
+- Document the preparation protocol, service readiness contract, and isolated real-model verification procedure
+- Add real-model E2E coverage for preparation, transcription reuse, and native loading beyond the request deadline
+- Clear existing lint errors required by the release checks
+
+---
+
 ## v0.2.2 — 2026-07-08
 
 ### Features

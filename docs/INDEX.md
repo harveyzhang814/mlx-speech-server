@@ -6,8 +6,14 @@
 
 | 文件 | 用途 |
 |------|------|
-| [reference/api.md](reference/api.md) | 完整 HTTP API 文档：所有端点、请求参数、响应结构、错误码、语言码与音频格式 |
+| [reference/api.md](reference/api.md) | HTTP API、显式模型准备协议与 CLI 服务就绪契约：请求、响应、错误码与音频格式 |
 | [reference/git-workflow.md](reference/git-workflow.md) | 分支拓扑、命名规范、提交信息格式与保护规则 |
+
+## how-to/ — 操作指南
+
+| 文件 | 用途 |
+|------|------|
+| [how-to/verify-explicit-preparation.md](how-to/verify-explicit-preparation.md) | 用独立 HTTP 实例和真实本地权重验证准备、音频复用与原生超时记账；说明 launchd 和冷下载边界 |
 
 ## adr/ — 架构决策记录
 

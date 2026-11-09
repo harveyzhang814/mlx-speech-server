@@ -555,3 +555,117 @@ def test_get_logs_returns_empty_when_no_files(fake_paths):
 
     assert out == "(empty)"
     assert err == "(empty)"
+
+
+def test_install_creates_loopback_config_with_first_model_and_port(fake_paths, monkeypatch):
+    monkeypatch.setattr(service.subprocess, "run", lambda *a, **kw: MagicMock(returncode=0))
+    monkeypatch.setattr(service, "_get_install_args", lambda: ["mlx-speech-server"])
+    service.install(model="mlx-community/whisper-small-mlx", port=47301)
+    assert service._read_env() == {
+        "WHISPER_HOST": "127.0.0.1", "WHISPER_PORT": "47301",
+        "WHISPER_MODEL_PATH": "mlx-community/whisper-small-mlx",
+    }
+    assert "127.0.0.1" in service.PLIST_PATH.read_text()
+
+
+def test_install_preserves_existing_config_bytes(fake_paths, monkeypatch):
+    service.CONFIG_DIR.mkdir()
+    original = "# custom config\nWHISPER_HOST=0.0.0.0\nWHISPER_PORT=9000\n"
+    service.CONFIG_ENV.write_text(original)
+    monkeypatch.setattr(service.subprocess, "run", lambda *a, **kw: MagicMock(returncode=0))
+    monkeypatch.setattr(service, "_get_install_args", lambda: ["mlx-speech-server"])
+    service.install(model="ignored", port=47301)
+    assert service.CONFIG_ENV.read_text() == original
+
+
+def test_get_install_args_preserves_wheel_source(monkeypatch):
+    fake_dist = MagicMock()
+    fake_dist.read_text.return_value = '{"url":"file:///tmp/mlx_speech_server-0.3.0-py3-none-any.whl","archive_info":{}}'
+    monkeypatch.setattr(service.importlib.metadata, "distribution", lambda _: fake_dist)
+    assert service._get_install_args() == ["/tmp/mlx_speech_server-0.3.0-py3-none-any.whl"]
+
+
+def test_install_current_runtime_registers_existing_runner_without_pip(fake_paths, monkeypatch):
+    runner = fake_paths / "locked-runtime/bin/mlx-run"
+    runner.parent.mkdir(parents=True)
+    runner.write_text("#!/bin/sh\n")
+    runner.chmod(0o755)
+    monkeypatch.setattr(service.sys, "executable", str(runner.parent / "python"))
+    run = MagicMock(side_effect=AssertionError("No subprocess needed"))
+    monkeypatch.setattr(service.subprocess, "run", run)
+    service.install(use_current_runtime=True)
+    import plistlib
+    plist = plistlib.loads(service.PLIST_PATH.read_bytes())
+    assert plist["ProgramArguments"] == [str(runner)]
+    assert plist["EnvironmentVariables"]["PATH"].startswith(str(runner.parent) + ":")
+    assert not service.VENV_DIR.exists()
+    run.assert_not_called()
+
+
+def test_install_current_runtime_rejects_missing_runner_before_writes(fake_paths, monkeypatch):
+    monkeypatch.setattr(service.sys, "executable", str(fake_paths / "missing/bin/python"))
+    with pytest.raises(RuntimeError, match="mlx-run"):
+        service.install(use_current_runtime=True)
+    assert not service.PLIST_PATH.exists()
+    assert not service.CONFIG_ENV.exists()
+
+
+def test_current_runtime_install_preserves_existing_plist(installed, monkeypatch):
+    original = service.PLIST_PATH.read_bytes()
+    monkeypatch.setattr(service.sys, "executable", str(installed / "missing/bin/python"))
+    monkeypatch.setattr(service.subprocess, "run", MagicMock(side_effect=AssertionError("no install")))
+    service.install(use_current_runtime=True)
+    assert service.PLIST_PATH.read_bytes() == original
+    assert not service.CONFIG_ENV.exists()
+
+
+@pytest.mark.parametrize("model,port", [("bad\nWHISPER_PORT=1", None), ("", None), (None, 0), (None, 65536)])
+def test_install_rejects_invalid_first_config_without_writes(fake_paths, monkeypatch, model, port):
+    run = MagicMock(side_effect=AssertionError("no install"))
+    monkeypatch.setattr(service.subprocess, "run", run)
+    with pytest.raises(ValueError):
+        service.install(model=model, port=port)
+    assert not service.CONFIG_ENV.exists()
+    run.assert_not_called()
+
+
+def test_get_install_args_decodes_wheel_file_url(monkeypatch):
+    fake_dist = MagicMock()
+    fake_dist.read_text.return_value = '{"url":"file:///tmp/App%20Support/mlx_speech_server-0.3.0-py3-none-any.whl","archive_info":{}}'
+    monkeypatch.setattr(service.importlib.metadata, "distribution", lambda _: fake_dist)
+    assert service._get_install_args() == ["/tmp/App Support/mlx_speech_server-0.3.0-py3-none-any.whl"]
+
+
+def test_current_runtime_plist_supports_xml_path_characters(fake_paths, monkeypatch):
+    import plistlib
+    runner = fake_paths / "runtime & tools/bin/mlx-run"
+    runner.parent.mkdir(parents=True)
+    runner.write_text("#!/bin/sh\n")
+    runner.chmod(0o755)
+    monkeypatch.setattr(service.sys, "executable", str(runner.parent / "python"))
+    service.install(use_current_runtime=True)
+    assert plistlib.loads(service.PLIST_PATH.read_bytes())["ProgramArguments"] == [str(runner)]
+
+
+@pytest.mark.parametrize("host,connect,url_host", [
+    ("127.0.0.2", "127.0.0.2", "127.0.0.2"),
+    ("0.0.0.0", "127.0.0.1", "127.0.0.1"),
+    ("::", "::1", "[::1]"),
+    ("::1", "::1", "[::1]"),
+    ("[::1]", "::1", "[::1]"),
+])
+def test_probes_use_configured_connect_host(installed, host, connect, url_host):
+    service.CONFIG_ENV.parent.mkdir(parents=True)
+    content = f"WHISPER_HOST={host}\nWHISPER_PORT=49000\n"
+    service.CONFIG_ENV.write_text(content)
+    response = MagicMock()
+    response.__enter__.return_value.read.return_value = b'{"status":"ok"}'
+    with patch.object(service.socket, "create_connection") as tcp, \
+         patch.object(service.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, "pid = 321")), \
+         patch.object(service.urllib.request, "urlopen", return_value=response) as http:
+        assert service._port_in_use(49000)
+        assert service.get_status()["health"] == {"status": "ok"}
+    tcp.assert_called_once_with((connect, 49000), timeout=0.5)
+    assert [call.args[0] for call in http.call_args_list] == [
+        f"http://{url_host}:49000/health", f"http://{url_host}:49000/v1/queue/stats"]
+    assert service.CONFIG_ENV.read_text() == content
