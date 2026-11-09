@@ -1,13 +1,9 @@
 from __future__ import annotations
 import json
 import uuid
-from fastapi import APIRouter, Body, Depends, Form, Header, UploadFile
+from fastapi import APIRouter, Depends, Form, Header, UploadFile
 from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
 from pydantic import BaseModel
-
-
-class BatchCancelRequest(BaseModel):
-    task_ids: list[str]
 
 from app.audio import UnsupportedAudioFormatError, cleanup_temp_file, save_upload_file
 from app.formatters import format_transcription
@@ -16,6 +12,10 @@ from app.registry import ModelNotFoundError, ModelRegistry
 from app.schemas.audio import ResponseFormat, TranscriptionParams
 from app.whisper_language import resolve_whisper_language
 from app.worker import InferenceWorker, TaskNotFoundError
+
+
+class BatchCancelRequest(BaseModel):
+    task_ids: list[str]
 
 
 async def _get_api_key(authorization: str | None = Header(None)) -> None:

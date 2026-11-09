@@ -1,4 +1,3 @@
-import pytest
 from app.schemas.common import ModelCard, ErrorResponse, QueueStats
 from app.schemas.audio import (
     TranscriptionRequest,
