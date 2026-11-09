@@ -34,6 +34,7 @@ class InferenceWorker:
         self._active_task_id: str | None = None
         self._cancelling: set[str] = set()
         self._pending_tasks: dict[str, asyncio.Task] = {}
+        self._native_futures: dict[str, asyncio.Future] = {}
 
     @property
     def queue_size(self) -> int:
@@ -55,6 +56,9 @@ class InferenceWorker:
     def max_size(self) -> int:
         return self._max_size
 
+    def is_executing(self, task_id: str) -> bool:
+        return self._active_task_id == task_id
+
     async def submit(self, task_id: str, fn: Callable[..., Any], *args: Any) -> Any:
         async with self._count_lock:
             if self._count >= self._max_size:
@@ -63,40 +67,54 @@ class InferenceWorker:
                 )
             self._count += 1
 
-        current = asyncio.current_task()
-        if current is not None:
-            self._pending_tasks[task_id] = current
-
+        execution = asyncio.create_task(self._run(task_id, fn, *args))
+        self._pending_tasks[task_id] = execution
+        execution.add_done_callback(lambda task: self._execution_done(task_id, task))
         try:
-            try:
-                return await asyncio.wait_for(
-                    self._run(task_id, fn, *args), timeout=self._timeout
-                )
-            except asyncio.TimeoutError:
-                raise QueueTimeoutError(
-                    f"Request timed out after {self._timeout}s waiting in queue."
-                )
-            except asyncio.CancelledError:
-                raise TaskCancelledError(f"Task {task_id} was cancelled.")
-        finally:
-            self._pending_tasks.pop(task_id, None)
-            self._cancelling.discard(task_id)
-            async with self._count_lock:
-                self._count -= 1
+            return await asyncio.wait_for(asyncio.shield(execution), timeout=self._timeout)
+        except asyncio.TimeoutError:
+            if task_id in self._pending_tasks:
+                self.cancel(task_id)
+                execution.cancel()
+            raise QueueTimeoutError(
+                f"Request timed out after {self._timeout}s waiting in queue."
+            ) from None
+        except asyncio.CancelledError:
+            if task_id in self._pending_tasks:
+                self.cancel(task_id)
+                execution.cancel()
+            raise TaskCancelledError(f"Task {task_id} was cancelled.") from None
 
     async def _run(self, task_id: str, fn: Callable[..., Any], *args: Any) -> Any:
         await self._execution_lock.acquire()
         self._active = True
         self._active_task_id = task_id
-        try:
-            loop = asyncio.get_running_loop()
-            result = await loop.run_in_executor(
-                self._executor, fn if not args else lambda: fn(*args)
-            )
-            if task_id in self._cancelling:
-                raise asyncio.CancelledError()
-            return result
-        finally:
+        loop = asyncio.get_running_loop()
+        native = loop.run_in_executor(
+            self._executor, fn if not args else lambda: fn(*args)
+        )
+        self._native_futures[task_id] = native
+        result = await asyncio.shield(native)
+        if task_id in self._cancelling:
+            raise asyncio.CancelledError()
+        return result
+
+    def _execution_done(self, task_id: str, execution: asyncio.Task) -> None:
+        native = self._native_futures.get(task_id)
+        if native is not None and not native.done():
+            # An HTTP waiter can disappear; the native execution still owns the
+            # resource, queue capacity and active marker until it really finishes.
+            native.add_done_callback(lambda _: self._execution_done(task_id, execution))
+            return
+        if native is not None and not native.cancelled():
+            native.exception()  # consume errors even when the waiter has gone away
+        if not execution.cancelled():
+            execution.exception()
+        self._native_futures.pop(task_id, None)
+        self._pending_tasks.pop(task_id, None)
+        self._cancelling.discard(task_id)
+        self._count -= 1
+        if self._active_task_id == task_id:
             self._active = False
             self._active_task_id = None
             self._execution_lock.release()

@@ -68,6 +68,7 @@ async def test_transcribe_passes_params_to_mlx_whisper(handler, tmp_wav_file):
     assert call_kwargs["initial_prompt"] == "hint"
     assert call_kwargs["temperature"] == 0.2
     assert call_kwargs["condition_on_previous_text"] is False
+    assert call_kwargs["fp16"] is True
 
 
 @pytest.mark.asyncio

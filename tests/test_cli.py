@@ -158,3 +158,65 @@ def test_logs_output():
     assert result.exit_code == 0
     assert "stdout content" in result.output
     assert "stderr content" in result.output
+
+
+def test_ensure_running_json_and_first_install_options():
+    import json
+    payload = {"running": True, "pid": 1, "port": 47301, "health": {"status": "ok"},
+               "service_label": service.SERVICE_LABEL}
+    with patch("app.cli.service.ensure_running", return_value=payload, create=True) as ensure:
+        result = CliRunner().invoke(cli, ["ensure-running", "--json", "--model", "mlx-community/whisper-small-mlx", "--port", "47301"])
+    assert result.exit_code == 0
+    assert json.loads(result.output) == payload
+    ensure.assert_called_once_with(model="mlx-community/whisper-small-mlx", port=47301)
+
+
+def test_ensure_running_error_json_exits_nonzero():
+    import json
+    payload = {"running": False, "pid": None, "port": 47300, "health": None,
+               "service_label": service.SERVICE_LABEL,
+               "error": {"code": "port_in_use", "message": "Another listener"}}
+    with patch("app.cli.service.ensure_running", return_value=payload, create=True):
+        result = CliRunner().invoke(cli, ["ensure-running", "--json"])
+    assert result.exit_code == 1
+    assert json.loads(result.output) == payload
+
+
+def test_install_json_is_noninteractive():
+    import json
+    with patch("app.cli.service.install") as install:
+        result = CliRunner().invoke(cli, ["install", "--json", "--port", "47301"])
+    assert result.exit_code == 0
+    assert json.loads(result.output)["installed"] is True
+    install.assert_called_once_with(model=None, port=47301)
+
+
+def test_install_failure_json_exits_nonzero():
+    import json
+    with patch("app.cli.service.install", side_effect=RuntimeError("pip failed")):
+        result = CliRunner().invoke(cli, ["install", "--json"])
+    assert result.exit_code == 1
+    assert json.loads(result.output)["error"]["code"] == "install_failed"
+
+
+def test_ensure_running_can_register_locked_current_runtime():
+    payload = {"running": True, "pid": 1, "port": 47300, "health": {"status": "ok"},
+               "service_label": service.SERVICE_LABEL}
+    with patch("app.cli.service.ensure_running", return_value=payload, create=True) as ensure:
+        result = CliRunner().invoke(cli, ["ensure-running", "--json", "--use-current-runtime"])
+    assert result.exit_code == 0
+    ensure.assert_called_once_with(model=None, port=None, use_current_runtime=True)
+
+
+def test_install_json_preserves_bounded_subprocess_diagnostic():
+    import json
+    failure = subprocess.CalledProcessError(1, ["pip", "hidden-argument"],
+        output="stdout context", stderr="ERROR: No space left on device\n" + "x" * 10000)
+    with patch("app.cli.service.install", side_effect=failure):
+        result = CliRunner().invoke(cli, ["install", "--json"])
+    error = json.loads(result.output)["error"]
+    assert result.exit_code == 1 and error["code"] == "install_failed"
+    assert "No space left on device" in error["message"]
+    assert "stdout context" in error["message"] and "exit status 1" in error["message"]
+    assert "hidden-argument" not in error["message"]
+    assert len(error["message"]) <= 2200

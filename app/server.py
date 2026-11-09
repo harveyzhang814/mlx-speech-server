@@ -1,6 +1,8 @@
 from __future__ import annotations
 import gc
 from contextlib import asynccontextmanager
+from importlib.metadata import PackageNotFoundError, version
+from uuid import uuid4
 from typing import AsyncGenerator
 
 import mlx.core as mx
@@ -11,11 +13,19 @@ from loguru import logger
 from app.api.audio import create_audio_router
 from app.api.models import create_models_router
 from app.api.queue import create_queue_router
-from app.audio import UnsupportedAudioFormatError
+from app.api.preparation import create_preparation_router
 from app.config import ServerConfig
 from app.handlers.whisper import WhisperHandler
-from app.registry import ModelNotFoundError, ModelRegistry
+from app.registry import ModelMismatchError, ModelNotFoundError, ModelRegistry
 from app.worker import InferenceWorker, QueueFullError, QueueTimeoutError
+
+
+# A process identity survives app factory calls but changes on server restart.
+_INSTANCE_ID = str(uuid4())
+try:
+    _SERVER_VERSION = version("mlx-speech-server")
+except PackageNotFoundError:
+    _SERVER_VERSION = "unknown"
 
 
 def create_app(
@@ -31,7 +41,7 @@ def create_app(
 
         handler = WhisperHandler(model_path=config.model_path, worker=worker)
         await handler.initialize()
-        registry.register(handler.model_info().id, handler)
+        registry.register(handler.model_info().id, handler, configured_path=config.model_path)
         logger.info(f"Registered model: {handler.model_info().id}")
 
         yield
@@ -48,6 +58,13 @@ def create_app(
     app.include_router(create_models_router(registry))
     app.include_router(create_audio_router(registry, worker))
     app.include_router(create_queue_router(worker))
+    app.include_router(create_preparation_router(
+        registry,
+        configured_model_id=config.model_path.rstrip("/").split("/")[-1],
+        configured_model_path=config.model_path,
+        instance_id=_INSTANCE_ID,
+        server_version=_SERVER_VERSION,
+    ))
 
     # Health
     @app.get("/health")
@@ -57,6 +74,13 @@ def create_app(
         return {"status": "ok", "model": model_id}
 
     # Exception handlers
+    @app.exception_handler(ModelMismatchError)
+    async def model_mismatch_handler(request: Request, exc: ModelMismatchError):
+        return JSONResponse(
+            status_code=409,
+            content={"error": {"message": str(exc), "type": "invalid_request_error", "code": "model_mismatch"}},
+        )
+
     @app.exception_handler(ModelNotFoundError)
     async def model_not_found_handler(request: Request, exc: ModelNotFoundError):
         return JSONResponse(

@@ -43,3 +43,14 @@ def test_list_models_returns_model_cards():
 def test_list_models_empty_registry():
     registry = ModelRegistry()
     assert registry.list_models() == []
+
+
+def test_configured_path_alias_is_exact_and_list_stays_unique():
+    registry = ModelRegistry()
+    handler = _FakeHandler()
+    registry.register("fake-model", handler, configured_path="configured/fake-model")
+    assert registry.get("configured/fake-model") is handler
+    assert registry.get("fake-model") is handler
+    with pytest.raises(ModelNotFoundError):
+        registry.get("different/fake-model")
+    assert [model.id for model in registry.list_models()] == ["fake-model"]
